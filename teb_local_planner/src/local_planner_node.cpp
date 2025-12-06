@@ -72,6 +72,7 @@ void LocalPlannerNode::initialize_publishers()
     "/planner/avoidance/latency", qos);
   
   // Race line visualization publisher for rviz
+  // 기존 global_republisher 대신 ADP-Project 플래너가 발행
   race_line_markers_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>(
     "/global_waypoints/markers", qos);
 }
