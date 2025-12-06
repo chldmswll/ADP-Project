@@ -70,6 +70,10 @@ void LocalPlannerNode::initialize_publishers()
 
   latency_pub_ = create_publisher<std_msgs::msg::Float32>(
     "/planner/avoidance/latency", qos);
+  
+  // Race line visualization publisher for rviz
+  race_line_markers_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>(
+    "/global_waypoints/markers", qos);
 }
 
 void LocalPlannerNode::initialize_subscriptions()
@@ -374,6 +378,67 @@ visualization_msgs::msg::MarkerArray LocalPlannerNode::create_delete_all_marker(
   return markers;
 }
 
+visualization_msgs::msg::MarkerArray LocalPlannerNode::create_race_line_markers(
+  const f110_msgs::msg::WpntArray::SharedPtr& waypoints)
+{
+  visualization_msgs::msg::MarkerArray markers;
+  
+  if (!waypoints || waypoints->wpnts.empty()) {
+    return markers;
+  }
+  
+  // 최대 속도 계산 (이미 globalWaypointsCallback에서 계산했지만 안전을 위해 다시 계산)
+  double max_vx_mps = 0.0;
+  for (const auto& wpnt : waypoints->wpnts) {
+    if (wpnt.vx_mps > max_vx_mps) {
+      max_vx_mps = wpnt.vx_mps;
+    }
+  }
+  
+  // max_vx_mps가 0이면 기본값 사용
+  if (max_vx_mps < 0.1) {
+    max_vx_mps = 1.0;
+  }
+  
+  // 각 waypoint를 마커로 변환
+  for (size_t i = 0; i < waypoints->wpnts.size(); i++) {
+    const auto& wpnt = waypoints->wpnts[i];
+    
+    visualization_msgs::msg::Marker marker;
+    marker.header.stamp = now();
+    marker.header.frame_id = "map";
+    marker.id = static_cast<int>(i);
+    marker.type = visualization_msgs::msg::Marker::CYLINDER;
+    marker.action = visualization_msgs::msg::Marker::ADD;
+    
+    // 위치 설정
+    marker.pose.position.x = wpnt.x_m;
+    marker.pose.position.y = wpnt.y_m;
+    marker.pose.position.z = wpnt.vx_mps / max_vx_mps / 2.0;  // 속도에 비례한 높이
+    
+    // 방향 설정
+    marker.pose.orientation.w = 1.0;
+    marker.pose.orientation.x = 0.0;
+    marker.pose.orientation.y = 0.0;
+    marker.pose.orientation.z = 0.0;
+    
+    // 크기 설정
+    marker.scale.x = 0.1;
+    marker.scale.y = 0.1;
+    marker.scale.z = wpnt.vx_mps / max_vx_mps;  // 속도에 비례한 높이
+    
+    // 색상 설정 (빨간색, 속도에 따라 밝기 조절)
+    marker.color.a = 1.0;
+    marker.color.r = 1.0;
+    marker.color.g = 0.0;
+    marker.color.b = 0.0;
+    
+    markers.markers.push_back(marker);
+  }
+  
+  return markers;
+}
+
 void LocalPlannerNode::obstaclesCallback(const f110_msgs::msg::ObstacleArray::SharedPtr msg)
 {
   obstacles_ = msg;
@@ -404,6 +469,10 @@ void LocalPlannerNode::globalWaypointsCallback(const f110_msgs::msg::WpntArray::
     // 최대 인덱스와 최대 s 값
     gb_max_idx_ = msg->wpnts.back().id;
     gb_max_s_ = msg->wpnts.back().s_m;
+    
+    // 레이스라인 시각화 마커 발행
+    auto race_line_markers = create_race_line_markers(msg);
+    race_line_markers_pub_->publish(race_line_markers);
   }
 }
 

@@ -117,6 +117,13 @@ private:
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr considered_obs_pub_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr propagated_obs_pub_;
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr latency_pub_;
+  
+  // Race line visualization publisher
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr race_line_markers_pub_;
+  
+  // Helper function to convert waypoints to markers
+  visualization_msgs::msg::MarkerArray create_race_line_markers(
+    const f110_msgs::msg::WpntArray::SharedPtr& waypoints);
 };
 
 }  // namespace teb_local_planner
