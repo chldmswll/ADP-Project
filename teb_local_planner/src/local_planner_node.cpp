@@ -71,10 +71,10 @@ void LocalPlannerNode::initialize_publishers()
   latency_pub_ = create_publisher<std_msgs::msg::Float32>(
     "/planner/avoidance/latency", qos);
   
-  // Race line visualization publisher for rviz
-  // 기존 global_republisher 대신 ADP-Project 플래너가 발행
-  race_line_markers_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>(
-    "/global_waypoints/markers", qos);
+  // Local planner trajectory visualization publisher for rviz
+  // 로컬 플래너가 생성하는 경로를 시각화
+  local_trajectory_markers_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>(
+    "/local_planner/trajectory/markers", qos);
 }
 
 void LocalPlannerNode::initialize_subscriptions()
@@ -131,6 +131,16 @@ void LocalPlannerNode::on_timer()
 
   otwpnts_pub_->publish(wpnts);
   markers_pub_->publish(markers);
+  
+  // 로컬 플래너가 생성한 경로를 시각화용 마커로 변환하여 발행
+  if (!wpnts.wpnts.empty()) {
+    auto local_traj_markers = create_local_trajectory_markers(wpnts);
+    local_trajectory_markers_pub_->publish(local_traj_markers);
+  } else {
+    // 경로가 없으면 마커 삭제
+    auto delete_markers = create_delete_all_marker();
+    local_trajectory_markers_pub_->publish(delete_markers);
+  }
 
   if(config_.measure){
     auto end_time = std::chrono::high_resolution_clock::now();
@@ -379,18 +389,18 @@ visualization_msgs::msg::MarkerArray LocalPlannerNode::create_delete_all_marker(
   return markers;
 }
 
-visualization_msgs::msg::MarkerArray LocalPlannerNode::create_race_line_markers(
-  const f110_msgs::msg::WpntArray::SharedPtr& waypoints)
+visualization_msgs::msg::MarkerArray LocalPlannerNode::create_local_trajectory_markers(
+  const f110_msgs::msg::OTWpntArray& wpnts)
 {
   visualization_msgs::msg::MarkerArray markers;
   
-  if (!waypoints || waypoints->wpnts.empty()) {
+  if (wpnts.wpnts.empty()) {
     return markers;
   }
   
-  // 최대 속도 계산 (이미 globalWaypointsCallback에서 계산했지만 안전을 위해 다시 계산)
+  // 최대 속도 계산
   double max_vx_mps = 0.0;
-  for (const auto& wpnt : waypoints->wpnts) {
+  for (const auto& wpnt : wpnts.wpnts) {
     if (wpnt.vx_mps > max_vx_mps) {
       max_vx_mps = wpnt.vx_mps;
     }
@@ -402,8 +412,8 @@ visualization_msgs::msg::MarkerArray LocalPlannerNode::create_race_line_markers(
   }
   
   // 각 waypoint를 마커로 변환
-  for (size_t i = 0; i < waypoints->wpnts.size(); i++) {
-    const auto& wpnt = waypoints->wpnts[i];
+  for (size_t i = 0; i < wpnts.wpnts.size(); i++) {
+    const auto& wpnt = wpnts.wpnts[i];
     
     visualization_msgs::msg::Marker marker;
     marker.header.stamp = now();
@@ -424,15 +434,15 @@ visualization_msgs::msg::MarkerArray LocalPlannerNode::create_race_line_markers(
     marker.pose.orientation.z = 0.0;
     
     // 크기 설정
-    marker.scale.x = 0.1;
-    marker.scale.y = 0.1;
+    marker.scale.x = 0.15;
+    marker.scale.y = 0.15;
     marker.scale.z = wpnt.vx_mps / max_vx_mps;  // 속도에 비례한 높이
     
-    // 색상 설정 (빨간색, 속도에 따라 밝기 조절)
+    // 색상 설정 (파란색으로 설정하여 글로벌 레이스라인과 구분)
     marker.color.a = 1.0;
-    marker.color.r = 1.0;
+    marker.color.r = 0.0;
     marker.color.g = 0.0;
-    marker.color.b = 0.0;
+    marker.color.b = 1.0;
     
     markers.markers.push_back(marker);
   }
@@ -470,10 +480,6 @@ void LocalPlannerNode::globalWaypointsCallback(const f110_msgs::msg::WpntArray::
     // 최대 인덱스와 최대 s 값
     gb_max_idx_ = msg->wpnts.back().id;
     gb_max_s_ = msg->wpnts.back().s_m;
-    
-    // 레이스라인 시각화 마커 발행
-    auto race_line_markers = create_race_line_markers(msg);
-    race_line_markers_pub_->publish(race_line_markers);
   }
 }
 
