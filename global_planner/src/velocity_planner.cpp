@@ -16,28 +16,29 @@ VelocityPlanner::VelocityPlanner() {
 
 WpntArray VelocityPlanner::generate_velocity_profile(const WpntArray& curvature_path) {
     WpntArray velocity_profile;
+    velocity_profile.header = curvature_path.header;
     
-    if (curvature_path.waypoints.empty()) {
+    if (curvature_path.wpnts.empty()) {
         return velocity_profile;
     }
     
     // 1단계: 각 점에서의 곡률 기반 최대 속도 계산
     // 클로소이드 곡선의 곡률 변화율을 고려하여 속도 제한
     std::vector<float> max_velocities;
-    max_velocities.reserve(curvature_path.waypoints.size());
+    max_velocities.reserve(curvature_path.wpnts.size());
     
-    for (size_t i = 0; i < curvature_path.waypoints.size(); ++i) {
-        const auto& wpnt = curvature_path.waypoints[i];
+    for (size_t i = 0; i < curvature_path.wpnts.size(); ++i) {
+        const auto& wpnt = curvature_path.wpnts[i];
         
         // 곡률 기반 속도 제한
-        float curvature_limit = calculate_max_speed_from_curvature(wpnt.curvature);
+        float curvature_limit = calculate_max_speed_from_curvature(wpnt.kappa_radpm);
         
         // 곡률 변화율 기반 속도 제한 (클로소이드 특성 보존)
         float dkappa_limit = calculate_max_speed_from_curvature_rate(
-            wpnt, i, curvature_path.waypoints);
+            wpnt, i, curvature_path.wpnts);
         
         // 횡가속도 제한
-        float lateral_limit = calculate_max_speed_from_lateral_accel(wpnt.curvature);
+        float lateral_limit = calculate_max_speed_from_lateral_accel(wpnt.kappa_radpm);
         
         // 최종 최대 속도는 가장 작은 값
         float max_vel = std::min({curvature_limit, dkappa_limit, lateral_limit, max_velocity_});
@@ -47,17 +48,17 @@ WpntArray VelocityPlanner::generate_velocity_profile(const WpntArray& curvature_
     // 2단계: 가속/감속 제약을 고려한 속도 프로파일 생성
     // 전방 스캔: 곡률이 증가하는 구간에서 미리 속도 감소
     std::vector<float> forward_velocities = max_velocities;
-    apply_forward_constraints(forward_velocities, curvature_path.waypoints);
+    apply_forward_constraints(forward_velocities, curvature_path.wpnts);
     
     // 후방 스캔: 가속 제약을 고려하여 속도 조정
     std::vector<float> backward_velocities = forward_velocities;
-    apply_backward_constraints(backward_velocities, curvature_path.waypoints);
+    apply_backward_constraints(backward_velocities, curvature_path.wpnts);
     
     // 3단계: 최종 속도 프로파일 생성
-    for (size_t i = 0; i < curvature_path.waypoints.size(); ++i) {
-        Wpnt velocity_wpnt = curvature_path.waypoints[i];
-        velocity_wpnt.velocity = backward_velocities[i];
-        velocity_profile.waypoints.push_back(velocity_wpnt);
+    for (size_t i = 0; i < curvature_path.wpnts.size(); ++i) {
+        Wpnt velocity_wpnt = curvature_path.wpnts[i];
+        velocity_wpnt.vx_mps = static_cast<double>(backward_velocities[i]);
+        velocity_profile.wpnts.push_back(velocity_wpnt);
     }
     
     return velocity_profile;
@@ -85,12 +86,12 @@ float VelocityPlanner::calculate_max_speed_from_curvature_rate(
     }
     
     // 이전/현재/다음 포인트 간 거리 계산
-    float dx_prev = wpnt.x - waypoints[idx - 1].x;
-    float dy_prev = wpnt.y - waypoints[idx - 1].y;
+    float dx_prev = wpnt.x_m - waypoints[idx - 1].x_m;
+    float dy_prev = wpnt.y_m - waypoints[idx - 1].y_m;
     float ds_prev = std::sqrt(dx_prev * dx_prev + dy_prev * dy_prev);
     
-    float dx_next = waypoints[idx + 1].x - wpnt.x;
-    float dy_next = waypoints[idx + 1].y - wpnt.y;
+    float dx_next = waypoints[idx + 1].x_m - wpnt.x_m;
+    float dy_next = waypoints[idx + 1].y_m - wpnt.y_m;
     float ds_next = std::sqrt(dx_next * dx_next + dy_next * dy_next);
     
     if (ds_prev < 1e-6 || ds_next < 1e-6) {
@@ -98,7 +99,7 @@ float VelocityPlanner::calculate_max_speed_from_curvature_rate(
     }
     
     // 곡률 변화율 계산: dκ/ds
-    float dkappa = (waypoints[idx + 1].curvature - waypoints[idx - 1].curvature) / (ds_prev + ds_next);
+    float dkappa = (waypoints[idx + 1].kappa_radpm - waypoints[idx - 1].kappa_radpm) / (ds_prev + ds_next);
     
     // 곡률 변화율이 클수록 속도 제한을 더 엄격하게
     // 클로소이드의 부드러운 곡률 변화를 보존하기 위함
@@ -111,7 +112,7 @@ float VelocityPlanner::calculate_max_speed_from_curvature_rate(
     // 곡률 변화율 기반 속도 감소 계수
     // 곡률 변화율이 클수록 속도를 더 줄여서 경로의 부드러움 유지
     float reduction_factor = 1.0f / (1.0f + 0.5f * dkappa_abs);
-    float base_speed = calculate_max_speed_from_curvature(wpnt.curvature);
+    float base_speed = calculate_max_speed_from_curvature(wpnt.kappa_radpm);
     
     return base_speed * reduction_factor;
 }
@@ -134,8 +135,8 @@ void VelocityPlanner::apply_forward_constraints(
     // 클로소이드 곡선의 최소 곡률 경로를 해치지 않도록 함
     
     for (size_t i = 0; i < waypoints.size() - 1; ++i) {
-        float dx = waypoints[i + 1].x - waypoints[i].x;
-        float dy = waypoints[i + 1].y - waypoints[i].y;
+        float dx = waypoints[i + 1].x_m - waypoints[i].x_m;
+        float dy = waypoints[i + 1].y_m - waypoints[i].y_m;
         float ds = std::sqrt(dx * dx + dy * dy);
         
         if (ds < 1e-6) {
@@ -153,7 +154,7 @@ void VelocityPlanner::apply_forward_constraints(
         // 다음 속도가 너무 크면 현재 속도에서 조정
         if (next_vel > min_next_vel + 0.1f) {
             // 다음 구간의 곡률이 더 크면 미리 속도 감소
-            if (std::abs(waypoints[i + 1].curvature) > std::abs(waypoints[i].curvature)) {
+            if (std::abs(waypoints[i + 1].kappa_radpm) > std::abs(waypoints[i].kappa_radpm)) {
                 velocities[i] = std::min(velocities[i], 
                     std::sqrt(next_vel * next_vel + 2.0f * max_deceleration_ * ds));
             }
@@ -168,8 +169,8 @@ void VelocityPlanner::apply_backward_constraints(
     // 클로소이드 곡선의 부드러운 속도 변화를 보장
     
     for (int i = static_cast<int>(waypoints.size()) - 2; i >= 0; --i) {
-        float dx = waypoints[i + 1].x - waypoints[i].x;
-        float dy = waypoints[i + 1].y - waypoints[i].y;
+        float dx = waypoints[i + 1].x_m - waypoints[i].x_m;
+        float dy = waypoints[i + 1].y_m - waypoints[i].y_m;
         float ds = std::sqrt(dx * dx + dy * dy);
         
         if (ds < 1e-6) {

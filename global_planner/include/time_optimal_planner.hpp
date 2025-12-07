@@ -3,14 +3,15 @@
 #ifndef TIME_OPTIMAL_PLANNER_HPP
 #define TIME_OPTIMAL_PLANNER_HPP
 
-#include "global_planner/msg/wpnt_array.hpp"
-#include "global_planner/msg/wpnt.hpp"
+#include "f110_msgs/msg/wpnt_array.hpp"
+#include "f110_msgs/msg/wpnt.hpp"
 #include <vector>
+
+using f110_msgs::msg::Wpnt;
+using f110_msgs::msg::WpntArray;
 
 class TimeOptimalPlanner {
 public:
-    using WpntMsg = global_planner::msg::Wpnt;
-	
     TimeOptimalPlanner();
     WpntArray optimize_time_path(const WpntArray& velocity_profile);
     float optimize_velocity(float current_velocity);

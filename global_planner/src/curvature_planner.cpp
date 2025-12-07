@@ -1,6 +1,7 @@
 // 최소곡률 경로 생성 (Clothoid 곡선 적용)
 
 #include "curvature_planner.hpp"
+#include "rclcpp/rclcpp.hpp"
 #include <cmath>
 #include <algorithm>
 
@@ -10,6 +11,9 @@ CurvaturePlanner::CurvaturePlanner() {
 
 WpntArray CurvaturePlanner::generate_minimum_curvature_path(const std::vector<Wpnt>& centerline) {
     WpntArray path;
+    path.header.frame_id = "map";
+    rclcpp::Clock clock;
+    path.header.stamp = clock.now();
     
     if (centerline.size() < 2) {
         return path;
@@ -30,8 +34,8 @@ WpntArray CurvaturePlanner::generate_minimum_curvature_path(const std::vector<Wp
         const Wpnt& p1 = centerline[i + 1];
         
         // 두 점 사이의 거리 계산
-        float dx = p1.x - p0.x;
-        float dy = p1.y - p0.y;
+        float dx = p1.x_m - p0.x_m;
+        float dy = p1.y_m - p0.y_m;
         float ds = std::sqrt(dx * dx + dy * dy);
         
         if (ds < 1e-6) {
@@ -39,12 +43,12 @@ WpntArray CurvaturePlanner::generate_minimum_curvature_path(const std::vector<Wp
         }
         
         // 초기 곡률과 곡률 변화율 계산
-        float kappa0 = p0.curvature;
-        float kappa1 = p1.curvature;
+        float kappa0 = p0.kappa_radpm;
+        float kappa1 = p1.kappa_radpm;
         float dkappa = (kappa1 - kappa0) / ds; // 곡률 변화율 (κ')
         
         // 초기 방향각
-        float theta0 = p0.yaw;
+        float theta0 = p0.psi_rad;
         
         // 클로소이드 곡선을 따라 중간 포인트들 생성
         int num_points = std::max(3, static_cast<int>(ds / 0.5)); // 약 0.5m 간격
@@ -69,7 +73,7 @@ WpntArray CurvaturePlanner::generate_minimum_curvature_path(const std::vector<Wp
     
     // 3. 경로를 WpntArray로 변환
     for (const auto& wpnt : clothoid_path) {
-        path.waypoints.push_back(wpnt);
+        path.wpnts.push_back(wpnt);
     }
     
     return path;
@@ -98,19 +102,20 @@ Wpnt CurvaturePlanner::interpolate_clothoid(
     
     // 선형 보간과 곡률 보정을 결합
     float t = s / ds_total;
-    wpnt.x = p0.x + t * (p1.x - p0.x);
-    wpnt.y = p0.y + t * (p1.y - p0.y);
+    wpnt.x_m = p0.x_m + t * (p1.x_m - p0.x_m);
+    wpnt.y_m = p0.y_m + t * (p1.y_m - p0.y_m);
     
     // 곡률 보정을 위한 추가 오프셋 (작은 곡률 변화 고려)
     if (std::abs(dkappa) > 1e-6) {
         float correction = s * s * s * dkappa / 6.0f; // 3차 항 근사
-        wpnt.x += correction * cos_theta;
-        wpnt.y += correction * sin_theta;
+        wpnt.x_m += correction * cos_theta;
+        wpnt.y_m += correction * sin_theta;
     }
     
-    wpnt.yaw = theta;
-    wpnt.curvature = kappa;
-    wpnt.velocity = 0.0f; // 속도는 velocity_planner에서 설정
+    wpnt.psi_rad = theta;
+    wpnt.kappa_radpm = kappa;
+    wpnt.vx_mps = 0.0; // 속도는 velocity_planner에서 설정
+    wpnt.id = 0; // ID는 나중에 설정
     
     return wpnt;
 }
@@ -133,7 +138,7 @@ void CurvaturePlanner::optimize_curvature_smoothness(std::vector<Wpnt>& path) {
         for (int j = -window; j <= window; ++j) {
             int idx = static_cast<int>(i) + j;
             if (idx >= 0 && idx < static_cast<int>(path.size())) {
-                sum += path[idx].curvature;
+                sum += path[idx].kappa_radpm;
                 count++;
             }
         }
@@ -143,26 +148,26 @@ void CurvaturePlanner::optimize_curvature_smoothness(std::vector<Wpnt>& path) {
     
     // 스무딩된 곡률 적용
     for (size_t i = 0; i < path.size(); ++i) {
-        path[i].curvature = smoothed_curvature[i];
+        path[i].kappa_radpm = smoothed_curvature[i];
     }
     
     // yaw 각도도 곡률에 맞게 재계산
     for (size_t i = 1; i < path.size(); ++i) {
-        float dx = path[i].x - path[i-1].x;
-        float dy = path[i].y - path[i-1].y;
-        path[i-1].yaw = std::atan2(dy, dx);
+        float dx = path[i].x_m - path[i-1].x_m;
+        float dy = path[i].y_m - path[i-1].y_m;
+        path[i-1].psi_rad = std::atan2(dy, dx);
     }
     
     if (path.size() > 1) {
-        path.back().yaw = path[path.size() - 2].yaw;
+        path.back().psi_rad = path[path.size() - 2].psi_rad;
     }
 }
 
 float CurvaturePlanner::calculate_curvature(const Wpnt& prev, const Wpnt& curr, const Wpnt& next) {
-    float dx1 = curr.x - prev.x;
-    float dy1 = curr.y - prev.y;
-    float dx2 = next.x - curr.x;
-    float dy2 = next.y - curr.y;
+    float dx1 = curr.x_m - prev.x_m;
+    float dy1 = curr.y_m - prev.y_m;
+    float dx2 = next.x_m - curr.x_m;
+    float dy2 = next.y_m - curr.y_m;
     
     // 곡률 계산: κ = (x'y'' - y'x'') / (x'² + y'²)^(3/2)
     float cross_product = dx1 * dy2 - dy1 * dx2;

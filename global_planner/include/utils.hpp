@@ -3,10 +3,10 @@
 #ifndef UTILS_HPP
 #define UTILS_HPP
 
-#include "global_planner/msg/wpnt.hpp"
+#include "f110_msgs/msg/wpnt.hpp"
 #include <vector>
 
-using global_planner::msg::Wpnt;
+using f110_msgs::msg::Wpnt;
 
 // 거리 계산
 float calculate_distance(const Wpnt& p1, const Wpnt& p2);

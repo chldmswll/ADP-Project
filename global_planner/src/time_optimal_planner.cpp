@@ -14,35 +14,36 @@ TimeOptimalPlanner::TimeOptimalPlanner() {
 
 WpntArray TimeOptimalPlanner::optimize_time_path(const WpntArray& velocity_profile) {
     WpntArray time_optimal_path;
+    time_optimal_path.header = velocity_profile.header;
     
-    if (velocity_profile.waypoints.empty()) {
+    if (velocity_profile.wpnts.empty()) {
         return time_optimal_path;
     }
     
     // 1단계: 각 구간의 거리 계산
     std::vector<float> segment_distances;
-    calculate_segment_distances(velocity_profile.waypoints, segment_distances);
+    calculate_segment_distances(velocity_profile.wpnts, segment_distances);
     
     // 2단계: Bang-bang 제어 원리를 사용한 최단 시간 속도 프로파일 생성
     // 최대 가속/감속을 사용하여 시간을 최소화
     
     // 전방 스캔: 곡률 제약을 고려하여 미리 감속해야 하는 구간 찾기
     std::vector<float> forward_velocities = apply_forward_time_optimization(
-        velocity_profile.waypoints, segment_distances);
+        velocity_profile.wpnts, segment_distances);
     
     // 후방 스캔: 가속 제약을 고려하여 가능한 최대 속도까지 가속
     std::vector<float> backward_velocities = apply_backward_time_optimization(
-        forward_velocities, velocity_profile.waypoints, segment_distances);
+        forward_velocities, velocity_profile.wpnts, segment_distances);
     
     // 3단계: 클로소이드 곡선의 곡률 변화율을 고려한 부드러운 속도 조정
     std::vector<float> smoothed_velocities = smooth_velocity_for_clothoid(
-        backward_velocities, velocity_profile.waypoints, segment_distances);
+        backward_velocities, velocity_profile.wpnts, segment_distances);
     
     // 4단계: 최종 경로 생성
-    for (size_t i = 0; i < velocity_profile.waypoints.size(); ++i) {
-        Wpnt wpnt = velocity_profile.waypoints[i];
-        wpnt.velocity = smoothed_velocities[i];
-        time_optimal_path.waypoints.push_back(wpnt);
+    for (size_t i = 0; i < velocity_profile.wpnts.size(); ++i) {
+        Wpnt wpnt = velocity_profile.wpnts[i];
+        wpnt.vx_mps = static_cast<double>(smoothed_velocities[i]);
+        time_optimal_path.wpnts.push_back(wpnt);
     }
     
     return time_optimal_path;
@@ -55,8 +56,8 @@ void TimeOptimalPlanner::calculate_segment_distances(
     distances.reserve(waypoints.size() - 1);
     
     for (size_t i = 0; i < waypoints.size() - 1; ++i) {
-        float dx = waypoints[i + 1].x - waypoints[i].x;
-        float dy = waypoints[i + 1].y - waypoints[i].y;
+        float dx = waypoints[i + 1].x_m - waypoints[i].x_m;
+        float dy = waypoints[i + 1].y_m - waypoints[i].y_m;
         float ds = std::sqrt(dx * dx + dy * dy);
         distances.push_back(ds);
     }
@@ -75,7 +76,7 @@ std::vector<float> TimeOptimalPlanner::apply_forward_time_optimization(
     }
     
     // 초기 속도 설정
-    velocities[0] = waypoints[0].velocity;
+    velocities[0] = static_cast<float>(waypoints[0].vx_mps);
     
     for (size_t i = 0; i < waypoints.size() - 1; ++i) {
         float current_vel = velocities[i];
@@ -87,7 +88,7 @@ std::vector<float> TimeOptimalPlanner::apply_forward_time_optimization(
         }
         
         // 다음 구간의 곡률 제약
-        float next_max_vel = waypoints[i + 1].velocity;
+        float next_max_vel = static_cast<float>(waypoints[i + 1].vx_mps);
         
         // 최대 감속도로 감속할 수 있는 최소 속도
         // v_next² = v_current² - 2·a_decel·ds
@@ -100,13 +101,13 @@ std::vector<float> TimeOptimalPlanner::apply_forward_time_optimization(
         
         // 다음 구간의 곡률이 더 크면 미리 감속
         if (i + 1 < waypoints.size() - 1) {
-            float future_curvature = waypoints[i + 1].curvature;
-            float current_curvature = waypoints[i].curvature;
+            float future_curvature = waypoints[i + 1].kappa_radpm;
+            float current_curvature = waypoints[i].kappa_radpm;
             
             if (std::abs(future_curvature) > std::abs(current_curvature)) {
                 // 곡률이 증가하는 구간: 미리 감속하여 최단 시간 달성
                 float future_ds = segment_distances[i + 1];
-                float required_vel = waypoints[i + 2].velocity;
+                float required_vel = static_cast<float>(waypoints[i + 2].vx_mps);
                 
                 // 필요한 속도까지 감속할 수 있는지 확인
                 float required_decel = (velocities[i + 1] * velocities[i + 1] - 
@@ -152,7 +153,7 @@ std::vector<float> TimeOptimalPlanner::apply_backward_time_optimization(
             next_vel * next_vel + 2.0f * max_acceleration_ * ds);
         
         // 곡률 제약과 가속 제약 중 더 엄격한 것 선택
-        float curvature_limit = waypoints[i].velocity;
+        float curvature_limit = static_cast<float>(waypoints[i].vx_mps);
         velocities[i] = std::min({max_current_vel, curvature_limit, max_velocity_});
         
         // 현재 속도가 너무 낮으면 가속
@@ -187,7 +188,7 @@ std::vector<float> TimeOptimalPlanner::smooth_velocity_for_clothoid(
             float ds_next = segment_distances[i];
             
             if (ds_prev > 1e-6 && ds_next > 1e-6) {
-                dkappa = (waypoints[i + 1].curvature - waypoints[i - 1].curvature) / 
+                dkappa = (waypoints[i + 1].kappa_radpm - waypoints[i - 1].kappa_radpm) / 
                          (ds_prev + ds_next);
             }
         }

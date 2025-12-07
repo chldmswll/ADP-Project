@@ -4,8 +4,10 @@
 #define CENTERLINE_EXTRACTOR_HPP
 
 #include "nav_msgs/msg/occupancy_grid.hpp"
-#include "global_planner/msg/wpnt.hpp"
+#include "f110_msgs/msg/wpnt.hpp"
 #include <vector>
+
+using f110_msgs::msg::Wpnt;
 
 class CenterlineExtractor {
 public:

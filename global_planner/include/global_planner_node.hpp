@@ -5,7 +5,7 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
-#include "global_planner/msg/wpnt_array.hpp"
+#include "f110_msgs/msg/wpnt_array.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "nav_msgs/msg/occupancy_grid.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
@@ -25,7 +25,7 @@ private:
     // 구독자 및 발행자
     rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr car_state_sub_;
-    rclcpp::Publisher<global_planner::msg::WpntArray>::SharedPtr global_waypoints_pub_;
+    rclcpp::Publisher<f110_msgs::msg::WpntArray>::SharedPtr global_waypoints_pub_;
 
     // 플래너 객체들
     std::shared_ptr<CenterlineExtractor> centerline_extractor_;

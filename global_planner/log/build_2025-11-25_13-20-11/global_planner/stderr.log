@@ -1,9 +1,0 @@
-[31mCMake Error at CMakeLists.txt:78 (add_library):
-  add_library cannot create target "utils_lib" because another target with
-  the same name already exists.  The existing target is a shared library
-  created in source directory
-  "/home/misys/forza_ws/race_stack/global_planner".  See documentation for
-  policy CMP0002 for more details.
-
-[0m
-gmake: *** [Makefile:1425: cmake_check_build_system] Error 1

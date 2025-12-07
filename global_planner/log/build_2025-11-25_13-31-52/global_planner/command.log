@@ -1,2 +1,0 @@
-Invoking command in '/home/misys/forza_ws/race_stack/global_planner/build/global_planner': /usr/bin/cmake --build /home/misys/forza_ws/race_stack/global_planner/build/global_planner -- -j18 -l18
-Invoked command in '/home/misys/forza_ws/race_stack/global_planner/build/global_planner' returned '2': /usr/bin/cmake --build /home/misys/forza_ws/race_stack/global_planner/build/global_planner -- -j18 -l18

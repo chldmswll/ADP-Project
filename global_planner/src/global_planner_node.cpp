@@ -2,7 +2,7 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
-#include "global_planner/msg/wpnt_array.hpp"
+#include "f110_msgs/msg/wpnt_array.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "nav_msgs/msg/occupancy_grid.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
@@ -23,7 +23,7 @@ public:
             "/car_state/pose", 10, std::bind(&GlobalPlannerNode::car_state_callback, this, std::placeholders::_1));
 
         // 발행자 정의
-        global_waypoints_pub_ = this->create_publisher<global_planner::msg::WpntArray>("/global_waypoints", 10);
+        global_waypoints_pub_ = this->create_publisher<f110_msgs::msg::WpntArray>("/global_waypoints", 10);
         
         // 초기화
         centerline_extractor_ = std::make_shared<CenterlineExtractor>();
@@ -58,7 +58,7 @@ private:
     // 구독자 및 발행자
     rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr car_state_sub_;
-    rclcpp::Publisher<global_planner::msg::WpntArray>::SharedPtr global_waypoints_pub_;
+    rclcpp::Publisher<f110_msgs::msg::WpntArray>::SharedPtr global_waypoints_pub_;
 
     // 플래너 객체들
     std::shared_ptr<CenterlineExtractor> centerline_extractor_;

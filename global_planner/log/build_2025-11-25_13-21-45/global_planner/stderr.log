@@ -1,9 +1,0 @@
-In file included from [01m[K/home/misys/forza_ws/race_stack/global_planner/src/utils.cpp:3[m[K:
-[01m[K/home/misys/forza_ws/race_stack/global_planner/include/utils.hpp:6:10:[m[K [01;31m[Kfatal error: [m[Kglobal_planner/msg/Wpnt.hpp: No such file or directory
-    6 | #include [01;31m[K"global_planner/msg/Wpnt.hpp"[m[K
-      |          [01;31m[K^~~~~~~~~~~~~~~~~~~~~~~~~~~~~[m[K
-compilation terminated.
-gmake[2]: *** [CMakeFiles/utils_lib.dir/build.make:76: CMakeFiles/utils_lib.dir/src/utils.cpp.o] Error 1
-gmake[1]: *** [CMakeFiles/Makefile2:742: CMakeFiles/utils_lib.dir/all] Error 2
-gmake[1]: *** Waiting for unfinished jobs....
-gmake: *** [Makefile:146: all] Error 2

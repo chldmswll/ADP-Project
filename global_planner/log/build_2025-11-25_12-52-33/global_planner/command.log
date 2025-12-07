@@ -1,2 +1,0 @@
-Invoking command in '/home/misys/forza_ws/race_stack/global_planner/build/global_planner': /usr/bin/cmake /home/misys/forza_ws/race_stack/global_planner -DCATKIN_INSTALL_INTO_PREFIX_ROOT=0 -DCMAKE_INSTALL_PREFIX=/home/misys/forza_ws/race_stack/global_planner/install/global_planner
-Invoked command in '/home/misys/forza_ws/race_stack/global_planner/build/global_planner' returned '1': /usr/bin/cmake /home/misys/forza_ws/race_stack/global_planner -DCATKIN_INSTALL_INTO_PREFIX_ROOT=0 -DCMAKE_INSTALL_PREFIX=/home/misys/forza_ws/race_stack/global_planner/install/global_planner

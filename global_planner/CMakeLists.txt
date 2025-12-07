@@ -8,16 +8,7 @@ find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
-
-# 메시지 파일 처리
-find_package(rosidl_default_generators REQUIRED)
-
-# 메시지 파일 생성
-rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/Wpnt.msg"
-  "msg/WpntArray.msg"
-  "msg/Metadata.msg"
-)
+find_package(f110_msgs REQUIRED)
 
 # Include 디렉토리 설정
 include_directories(include)
@@ -25,20 +16,20 @@ include_directories(include)
 add_library(utils_lib src/utils.cpp)
 target_include_directories(utils_lib PUBLIC
 	include
-	$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/rosidl_generator_cpp>
-	$<INSTALL_INTERFACE:include>
 )
 
 ament_target_dependencies(utils_lib
 	rclcpp
 )
 
-# 소스 파일 추가
+# 라이브러리 생성 (클래스 구현용)
+add_library(centerline_extractor_lib src/centerline_extractor.cpp)
+add_library(curvature_planner_lib src/curvature_planner.cpp)
+add_library(velocity_planner_lib src/velocity_planner.cpp)
+add_library(time_optimal_planner_lib src/time_optimal_planner.cpp)
+
+# 소스 파일 추가 (실행 파일)
 add_executable(global_planner_node src/global_planner_node.cpp)
-add_executable(centerline_extractor src/centerline_extractor.cpp)
-add_executable(curvature_planner src/curvature_planner.cpp)
-add_executable(velocity_planner src/velocity_planner.cpp)
-add_executable(time_optimal_planner src/time_optimal_planner.cpp)
 
 # ROS2 의존성 연결
 ament_target_dependencies(global_planner_node 
@@ -47,50 +38,61 @@ ament_target_dependencies(global_planner_node
   sensor_msgs 
   nav_msgs 
   geometry_msgs
+  f110_msgs
   )
 
-ament_target_dependencies(centerline_extractor 
+# 라이브러리 의존성
+ament_target_dependencies(centerline_extractor_lib 
   rclcpp 
   nav_msgs
+  f110_msgs
   )
 
-ament_target_dependencies(curvature_planner 
+ament_target_dependencies(curvature_planner_lib 
   rclcpp 
+  f110_msgs
   )
 
-ament_target_dependencies(velocity_planner 
+ament_target_dependencies(velocity_planner_lib 
   rclcpp 
+  f110_msgs
   )
 
-ament_target_dependencies(time_optimal_planner 
-  rclcpp )
+ament_target_dependencies(time_optimal_planner_lib 
+  rclcpp 
+  f110_msgs
+  )
+
+ament_target_dependencies(utils_lib
+  rclcpp
+  f110_msgs
+  )
 
 # Utils 라이브러리 링크
-target_link_libraries(centerline_extractor utils_lib)
-target_link_libraries(curvature_planner utils_lib)
-target_link_libraries(velocity_planner utils_lib)
-target_link_libraries(time_optimal_planner utils_lib)
+target_link_libraries(centerline_extractor_lib utils_lib)
+target_link_libraries(curvature_planner_lib utils_lib)
+target_link_libraries(velocity_planner_lib utils_lib)
+target_link_libraries(time_optimal_planner_lib utils_lib)
 target_link_libraries(global_planner_node utils_lib)
 
-# 메시지 타겟 의존성 추가
-rosidl_get_typesupport_target(cpp_typesupport_target
-  ${PROJECT_NAME} rosidl_typesupport_cpp)
+# 플래너 라이브러리들을 global_planner_node에 링크
+target_link_libraries(global_planner_node 
+  centerline_extractor_lib
+  curvature_planner_lib
+  velocity_planner_lib
+  time_optimal_planner_lib
+)
 
-target_link_libraries(global_planner_node "${cpp_typesupport_target}")
-target_link_libraries(centerline_extractor "${cpp_typesupport_target}")
-target_link_libraries(curvature_planner "${cpp_typesupport_target}")
-target_link_libraries(velocity_planner "${cpp_typesupport_target}")
-target_link_libraries(time_optimal_planner "${cpp_typesupport_target}")
 
 
 
 # 설치
 install(TARGETS
   global_planner_node
-  centerline_extractor
-  curvature_planner
-  velocity_planner
-  time_optimal_planner
+  centerline_extractor_lib
+  curvature_planner_lib
+  velocity_planner_lib
+  time_optimal_planner_lib
   utils_lib
   DESTINATION lib/${PROJECT_NAME})
 

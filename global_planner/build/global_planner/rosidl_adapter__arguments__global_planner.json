@@ -1,8 +1,0 @@
-{
-  "package_name": "global_planner",
-  "non_idl_tuples": [
-    "/home/misys/forza_ws/race_stack/global_planner:msg/Wpnt.msg",
-    "/home/misys/forza_ws/race_stack/global_planner:msg/WpntArray.msg",
-    "/home/misys/forza_ws/race_stack/global_planner:msg/Metadata.msg"
-  ]
-}

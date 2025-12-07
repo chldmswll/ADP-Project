@@ -5,7 +5,7 @@
 
 // 두 점 사이의 거리 계산
 float calculate_distance(const Wpnt& p1, const Wpnt& p2) {
-    return calculate_distance(p1.x, p1.y, p2.x, p2.y);
+    return calculate_distance(p1.x_m, p1.y_m, p2.x_m, p2.y_m);
 }
 
 float calculate_distance(float x1, float y1, float x2, float y2) {
@@ -14,8 +14,8 @@ float calculate_distance(float x1, float y1, float x2, float y2) {
     return std::sqrt(dx * dx + dy * dy);
 }
 float calculate_yaw(const Wpnt& from, const Wpnt& to) {
-    float dx = to.x - from.x;
-    float dy = to.y - from.y;
+    float dx = to.x_m - from.x_m;
+    float dy = to.y_m - from.y_m;
     return calculate_yaw(dx, dy);
 }
 
@@ -25,10 +25,10 @@ float calculate_yaw(float dx, float dy) {
 
 // 곡률 계산: κ = (x'y'' - y'x'') / (x'² + y'²)^(3/2)
 float calculate_curvature(const Wpnt& prev, const Wpnt& curr, const Wpnt& next) {
-    float dx1 = curr.x - prev.x;
-    float dy1 = curr.y - prev.y;
-    float dx2 = next.x - curr.x;
-    float dy2 = next.y - curr.y;
+    float dx1 = curr.x_m - prev.x_m;
+    float dy1 = curr.y_m - prev.y_m;
+    float dx2 = next.x_m - curr.x_m;
+    float dy2 = next.y_m - curr.y_m;
     
     // 곡률 계산
     float cross_product = dx1 * dy2 - dy1 * dx2;
@@ -52,7 +52,7 @@ float calculate_curvature_rate(
     }
     
     // 곡률 변화율: dκ/ds = (κ_next - κ_prev) / (ds_prev + ds_next)
-    float dkappa = (next.curvature - prev.curvature) / (ds_prev + ds_next);
+    float dkappa = (next.kappa_radpm - prev.kappa_radpm) / (ds_prev + ds_next);
     return dkappa;
 }
 

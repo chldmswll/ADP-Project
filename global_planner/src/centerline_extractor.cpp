@@ -71,11 +71,12 @@ void CenterlineExtractor::extract_centerline(const nav_msgs::msg::OccupancyGrid:
             double world_y = origin_y + (center_y + 0.5) * resolution;
             
             Wpnt point;
-            point.x = static_cast<float>(world_x);
-            point.y = static_cast<float>(world_y);
-            point.yaw = 0.0f;  // 나중에 계산
-            point.curvature = 0.0f;  // 나중에 계산
-            point.velocity = 0.0f;
+            point.x_m = world_x;
+            point.y_m = world_y;
+            point.psi_rad = 0.0;  // 나중에 계산
+            point.kappa_radpm = 0.0;  // 나중에 계산
+            point.vx_mps = 0.0;
+            point.id = static_cast<int32_t>(centerline_.size());
             
             centerline_.push_back(point);
         }
@@ -83,14 +84,14 @@ void CenterlineExtractor::extract_centerline(const nav_msgs::msg::OccupancyGrid:
     
     // yaw 각도 계산 (이전 포인트와 현재 포인트 사이의 방향)
     for (size_t i = 1; i < centerline_.size(); i++) {
-        double dx = centerline_[i].x - centerline_[i-1].x;
-        double dy = centerline_[i].y - centerline_[i-1].y;
-        centerline_[i-1].yaw = static_cast<float>(std::atan2(dy, dx));
+        double dx = centerline_[i].x_m - centerline_[i-1].x_m;
+        double dy = centerline_[i].y_m - centerline_[i-1].y_m;
+        centerline_[i-1].psi_rad = std::atan2(dy, dx);
     }
     
     // 마지막 포인트의 yaw는 이전 포인트와 동일하게 설정
     if (centerline_.size() > 1) {
-        centerline_.back().yaw = centerline_[centerline_.size() - 2].yaw;
+        centerline_.back().psi_rad = centerline_[centerline_.size() - 2].psi_rad;
     }
     
     // 곡률 계산
