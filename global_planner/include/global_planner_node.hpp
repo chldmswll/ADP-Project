@@ -5,7 +5,6 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
-#include "std_msgs/msg/float32.hpp"
 #include "f110_msgs/msg/wpnt_array.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "nav_msgs/msg/occupancy_grid.hpp"
@@ -15,8 +14,7 @@
 #include "curvature_planner.hpp"
 #include "velocity_planner.hpp"
 #include "time_optimal_planner.hpp"
-#include <string>
-#include <fstream>
+#include "file_writer.hpp"
 
 class GlobalPlannerNode : public rclcpp::Node {
 public:
@@ -30,45 +28,26 @@ private:
     visualization_msgs::msg::MarkerArray create_trackbounds_markers();
     visualization_msgs::msg::MarkerArray create_waypoints_markers(const f110_msgs::msg::WpntArray& waypoints);
     f110_msgs::msg::WpntArray generate_shortest_path(const std::vector<f110_msgs::msg::Wpnt>& centerline);
-    f110_msgs::msg::WpntArray create_centerline_waypoints(const std::vector<f110_msgs::msg::Wpnt>& centerline);
-    double calculate_estimated_lap_time(const f110_msgs::msg::WpntArray& waypoints);
-    double calculate_max_speed(const f110_msgs::msg::WpntArray& waypoints);
-    std::string create_map_info_string(const f110_msgs::msg::WpntArray& time_optimal_path, 
-                                       const f110_msgs::msg::WpntArray& shortest_path);
-    void write_global_waypoints_json(const std::string& map_dir,
-                                     const std::string& map_info_str,
-                                     float est_lap_time,
-                                     const visualization_msgs::msg::MarkerArray& centerline_markers,
-                                     const f110_msgs::msg::WpntArray& centerline_waypoints,
-                                     const visualization_msgs::msg::MarkerArray& global_traj_markers_iqp,
-                                     const f110_msgs::msg::WpntArray& global_traj_wpnts_iqp,
-                                     const visualization_msgs::msg::MarkerArray& global_traj_markers_sp,
-                                     const f110_msgs::msg::WpntArray& global_traj_wpnts_sp,
-                                     const visualization_msgs::msg::MarkerArray& trackbounds_markers);
     
     // 구독자 및 발행자
     rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr car_state_sub_;
     rclcpp::Publisher<f110_msgs::msg::WpntArray>::SharedPtr global_waypoints_pub_;
     rclcpp::Publisher<f110_msgs::msg::WpntArray>::SharedPtr shortest_path_pub_;
-    rclcpp::Publisher<f110_msgs::msg::WpntArray>::SharedPtr centerline_waypoints_pub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr waypoints_markers_pub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr shortest_path_markers_pub_;
-    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr centerline_markers_pub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr trackbounds_markers_pub_;
-    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr map_infos_pub_;
-    rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr est_lap_time_pub_;
 
     // 플래너 객체들
     std::shared_ptr<CenterlineExtractor> centerline_extractor_;
     std::shared_ptr<CurvaturePlanner> curvature_planner_;
     std::shared_ptr<VelocityPlanner> velocity_planner_;
     std::shared_ptr<TimeOptimalPlanner> time_optimal_planner_;
+    std::shared_ptr<FileWriter> file_writer_;
     
-    // 파라미터
-    std::string map_name_;
+    // 파일 저장 경로
     std::string map_dir_;
-    bool map_processed_;
+    bool save_json_enabled_;
 };
 
 #endif  // GLOBAL_PLANNER_NODE_HPP

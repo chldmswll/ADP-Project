@@ -24,25 +24,53 @@ WpntArray TimeOptimalPlanner::optimize_time_path(const WpntArray& velocity_profi
     std::vector<float> segment_distances;
     calculate_segment_distances(velocity_profile.wpnts, segment_distances);
     
+    // 1.5단계: 최소곡률(클로소이드) 기반 속도 제한 저장
+    // velocity_profile의 속도는 이미 곡률 기반으로 계산된 최대 속도이므로
+    // 이를 절대 상회하지 않도록 제약으로 사용
+    std::vector<float> curvature_based_limits;
+    curvature_based_limits.reserve(velocity_profile.wpnts.size());
+    for (const auto& wpnt : velocity_profile.wpnts) {
+        curvature_based_limits.push_back(static_cast<float>(wpnt.vx_mps));
+    }
+    
     // 2단계: Bang-bang 제어 원리를 사용한 최단 시간 속도 프로파일 생성
     // 최대 가속/감속을 사용하여 시간을 최소화
+    // 단, 최소곡률(클로소이드) 제약을 위반하지 않도록 함
     
     // 전방 스캔: 곡률 제약을 고려하여 미리 감속해야 하는 구간 찾기
     std::vector<float> forward_velocities = apply_forward_time_optimization(
         velocity_profile.wpnts, segment_distances);
     
+    // 곡률 제약 적용: 최소곡률 기반 속도 제한을 초과하지 않도록
+    for (size_t i = 0; i < forward_velocities.size(); ++i) {
+        forward_velocities[i] = std::min(forward_velocities[i], curvature_based_limits[i]);
+    }
+    
     // 후방 스캔: 가속 제약을 고려하여 가능한 최대 속도까지 가속
     std::vector<float> backward_velocities = apply_backward_time_optimization(
         forward_velocities, velocity_profile.wpnts, segment_distances);
+    
+    // 곡률 제약 적용: 최소곡률 기반 속도 제한을 초과하지 않도록
+    for (size_t i = 0; i < backward_velocities.size(); ++i) {
+        backward_velocities[i] = std::min(backward_velocities[i], curvature_based_limits[i]);
+    }
     
     // 3단계: 클로소이드 곡선의 곡률 변화율을 고려한 부드러운 속도 조정
     std::vector<float> smoothed_velocities = smooth_velocity_for_clothoid(
         backward_velocities, velocity_profile.wpnts, segment_distances);
     
-    // 4단계: 최종 경로 생성
+    // 곡률 제약 최종 적용: 최소곡률 기반 속도 제한을 초과하지 않도록
+    for (size_t i = 0; i < smoothed_velocities.size(); ++i) {
+        smoothed_velocities[i] = std::min(smoothed_velocities[i], curvature_based_limits[i]);
+    }
+    
+    // 4단계: 최소곡률 경로 보존 확인 및 최종 경로 생성
     for (size_t i = 0; i < velocity_profile.wpnts.size(); ++i) {
         Wpnt wpnt = velocity_profile.wpnts[i];
+        // 최소곡률(클로소이드) 경로의 곡률과 방향각은 그대로 유지
+        // 속도만 최적화 (단, 곡률 제약 내에서)
         wpnt.vx_mps = static_cast<double>(smoothed_velocities[i]);
+        // 곡률과 방향각은 velocity_profile에서 가져온 최소곡률 경로 값 유지
         time_optimal_path.wpnts.push_back(wpnt);
     }
     
@@ -87,7 +115,8 @@ std::vector<float> TimeOptimalPlanner::apply_forward_time_optimization(
             continue;
         }
         
-        // 다음 구간의 곡률 제약
+        // 다음 구간의 곡률 제약 (최소곡률 클로소이드 기반)
+        // waypoints[i+1].vx_mps는 이미 곡률 기반으로 계산된 최대 속도
         float next_max_vel = static_cast<float>(waypoints[i + 1].vx_mps);
         
         // 최대 감속도로 감속할 수 있는 최소 속도
@@ -96,8 +125,9 @@ std::vector<float> TimeOptimalPlanner::apply_forward_time_optimization(
             std::max(0.0f, current_vel * current_vel - 2.0f * max_deceleration_ * ds));
         
         // 곡률 제약과 감속 제약 중 더 엄격한 것 선택
+        // 최소곡률(클로소이드) 경로를 해치지 않도록 곡률 제약 우선 적용
         velocities[i + 1] = std::min(next_max_vel, 
-            std::max(min_next_vel, current_vel - max_deceleration_ * (ds / current_vel)));
+            std::max(min_next_vel, current_vel - max_deceleration_ * (ds / std::max(current_vel, 0.1f))));
         
         // 다음 구간의 곡률이 더 크면 미리 감속
         if (i + 1 < waypoints.size() - 1) {
@@ -153,7 +183,9 @@ std::vector<float> TimeOptimalPlanner::apply_backward_time_optimization(
             next_vel * next_vel + 2.0f * max_acceleration_ * ds);
         
         // 곡률 제약과 가속 제약 중 더 엄격한 것 선택
+        // 최소곡률(클로소이드) 경로를 해치지 않도록 곡률 제약 우선 적용
         float curvature_limit = static_cast<float>(waypoints[i].vx_mps);
+        // curvature_limit은 이미 곡률 기반으로 계산된 최대 속도이므로 이를 우선 적용
         velocities[i] = std::min({max_current_vel, curvature_limit, max_velocity_});
         
         // 현재 속도가 너무 낮으면 가속
@@ -194,6 +226,7 @@ std::vector<float> TimeOptimalPlanner::smooth_velocity_for_clothoid(
         }
         
         // 곡률 변화율이 클수록 속도 변화를 부드럽게
+        // 클로소이드 곡선의 최소곡률 특성을 보존하기 위해 곡률 변화율 고려
         float dkappa_abs = std::abs(dkappa);
         if (dkappa_abs > 0.1f) {
             // 속도 변화율 제한
@@ -212,6 +245,11 @@ std::vector<float> TimeOptimalPlanner::smooth_velocity_for_clothoid(
                 smoothed[i] = vel_prev + (smoothed[i] > vel_prev ? 1.0f : -1.0f) * max_vel_change;
             }
         }
+        
+        // 최소곡률(클로소이드) 제약 확인: 곡률 기반 최대 속도 초과 방지
+        // waypoints[i].vx_mps는 이미 곡률 기반으로 계산된 최대 속도
+        float curvature_max_vel = static_cast<float>(waypoints[i].vx_mps);
+        smoothed[i] = std::min(smoothed[i], curvature_max_vel);
     }
     
     return smoothed;

@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.5)
 project(global_planner)
 
+# C++17 표준 사용 (std::filesystem을 위해 필요)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 # ROS2 의존성 패키지
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -28,6 +32,7 @@ add_library(centerline_extractor_lib src/centerline_extractor.cpp)
 add_library(curvature_planner_lib src/curvature_planner.cpp)
 add_library(velocity_planner_lib src/velocity_planner.cpp)
 add_library(time_optimal_planner_lib src/time_optimal_planner.cpp)
+add_library(file_writer_lib src/file_writer.cpp)
 
 # 소스 파일 추가 (실행 파일)
 add_executable(global_planner src/global_planner_node.cpp)
@@ -46,7 +51,6 @@ ament_target_dependencies(global_planner
 
 ament_target_dependencies(global_trajectory_publisher
   rclcpp
-  std_msgs
   visualization_msgs
   f110_msgs
   )
@@ -78,6 +82,12 @@ ament_target_dependencies(utils_lib
   f110_msgs
   )
 
+ament_target_dependencies(file_writer_lib
+  rclcpp
+  std_msgs
+  f110_msgs
+  )
+
 # Utils 라이브러리 링크
 target_link_libraries(centerline_extractor_lib utils_lib)
 target_link_libraries(curvature_planner_lib utils_lib)
@@ -91,6 +101,7 @@ target_link_libraries(global_planner
   curvature_planner_lib
   velocity_planner_lib
   time_optimal_planner_lib
+  file_writer_lib
 )
 
 
@@ -104,6 +115,7 @@ install(TARGETS
   curvature_planner_lib
   velocity_planner_lib
   time_optimal_planner_lib
+  file_writer_lib
   utils_lib
   DESTINATION lib/${PROJECT_NAME})
 
