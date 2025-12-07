@@ -11,6 +11,8 @@ CenterlineExtractor::CenterlineExtractor() {
 
 void CenterlineExtractor::extract_centerline(const nav_msgs::msg::OccupancyGrid::SharedPtr map) {
     centerline_.clear();
+    left_boundary_.clear();
+    right_boundary_.clear();
     
     if (!map || map->data.empty()) {
         return;
@@ -79,6 +81,12 @@ void CenterlineExtractor::extract_centerline(const nav_msgs::msg::OccupancyGrid:
             point.id = static_cast<int32_t>(centerline_.size());
             
             centerline_.push_back(point);
+            
+            // 경계선 좌표 저장
+            double left_y = origin_y + (left_boundary + 0.5) * resolution;
+            double right_y = origin_y + (right_boundary + 0.5) * resolution;
+            left_boundary_.push_back({world_x, left_y});
+            right_boundary_.push_back({world_x, right_y});
         }
     }
     
@@ -112,6 +120,14 @@ void CenterlineExtractor::extract_centerline(const nav_msgs::msg::OccupancyGrid:
 
 const std::vector<Wpnt>& CenterlineExtractor::get_centerline() const {
     return centerline_;
+}
+
+const std::vector<std::pair<double, double>>& CenterlineExtractor::get_left_boundary() const {
+    return left_boundary_;
+}
+
+const std::vector<std::pair<double, double>>& CenterlineExtractor::get_right_boundary() const {
+    return right_boundary_;
 }
 
 

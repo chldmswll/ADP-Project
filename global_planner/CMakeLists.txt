@@ -8,6 +8,7 @@ find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
 find_package(f110_msgs REQUIRED)
 
 # Include 디렉토리 설정
@@ -39,11 +40,13 @@ ament_target_dependencies(global_planner
   sensor_msgs 
   nav_msgs 
   geometry_msgs
+  visualization_msgs
   f110_msgs
   )
 
 ament_target_dependencies(global_trajectory_publisher
   rclcpp
+  visualization_msgs
   f110_msgs
   )
 
