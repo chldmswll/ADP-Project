@@ -22,8 +22,8 @@ public:
         car_state_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
             "/car_state/pose", 10, std::bind(&GlobalPlannerNode::car_state_callback, this, std::placeholders::_1));
 
-        // 발행자 정의
-        global_waypoints_pub_ = this->create_publisher<f110_msgs::msg::WpntArray>("/global_waypoints", 10);
+        // 발행자 정의 (내부 토픽으로 발행, global_trajectory_publisher가 구독)
+        global_waypoints_pub_ = this->create_publisher<f110_msgs::msg::WpntArray>("/global_planner/waypoints", 10);
         
         // 초기화
         centerline_extractor_ = std::make_shared<CenterlineExtractor>();

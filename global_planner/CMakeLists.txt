@@ -29,15 +29,21 @@ add_library(velocity_planner_lib src/velocity_planner.cpp)
 add_library(time_optimal_planner_lib src/time_optimal_planner.cpp)
 
 # 소스 파일 추가 (실행 파일)
-add_executable(global_planner_node src/global_planner_node.cpp)
+add_executable(global_planner src/global_planner_node.cpp)
+add_executable(global_trajectory_publisher src/global_trajectory_publisher.cpp)
 
 # ROS2 의존성 연결
-ament_target_dependencies(global_planner_node 
+ament_target_dependencies(global_planner 
   rclcpp 
   std_msgs 
   sensor_msgs 
   nav_msgs 
   geometry_msgs
+  f110_msgs
+  )
+
+ament_target_dependencies(global_trajectory_publisher
+  rclcpp
   f110_msgs
   )
 
@@ -73,10 +79,10 @@ target_link_libraries(centerline_extractor_lib utils_lib)
 target_link_libraries(curvature_planner_lib utils_lib)
 target_link_libraries(velocity_planner_lib utils_lib)
 target_link_libraries(time_optimal_planner_lib utils_lib)
-target_link_libraries(global_planner_node utils_lib)
+target_link_libraries(global_planner utils_lib)
 
-# 플래너 라이브러리들을 global_planner_node에 링크
-target_link_libraries(global_planner_node 
+# 플래너 라이브러리들을 global_planner에 링크
+target_link_libraries(global_planner 
   centerline_extractor_lib
   curvature_planner_lib
   velocity_planner_lib
@@ -88,7 +94,8 @@ target_link_libraries(global_planner_node
 
 # 설치
 install(TARGETS
-  global_planner_node
+  global_planner
+  global_trajectory_publisher
   centerline_extractor_lib
   curvature_planner_lib
   velocity_planner_lib

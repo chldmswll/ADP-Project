@@ -96,7 +96,7 @@ void CenterlineExtractor::extract_centerline(const nav_msgs::msg::OccupancyGrid:
     
     // 곡률 계산
     for (size_t i = 1; i < centerline_.size() - 1; i++) {
-        centerline_[i].curvature = calculate_curvature(
+        centerline_[i].kappa_radpm = calculate_curvature(
             centerline_[i-1], 
             centerline_[i], 
             centerline_[i+1]
@@ -105,8 +105,8 @@ void CenterlineExtractor::extract_centerline(const nav_msgs::msg::OccupancyGrid:
     
     // 첫 번째와 마지막 포인트의 곡률은 인접 포인트와 동일하게 설정
     if (centerline_.size() > 2) {
-        centerline_[0].curvature = centerline_[1].curvature;
-        centerline_.back().curvature = centerline_[centerline_.size() - 2].curvature;
+        centerline_[0].kappa_radpm = centerline_[1].kappa_radpm;
+        centerline_.back().kappa_radpm = centerline_[centerline_.size() - 2].kappa_radpm;
     }
 }
 
