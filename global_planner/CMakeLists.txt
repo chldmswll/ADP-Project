@@ -46,6 +46,7 @@ ament_target_dependencies(global_planner
 
 ament_target_dependencies(global_trajectory_publisher
   rclcpp
+  std_msgs
   visualization_msgs
   f110_msgs
   )
