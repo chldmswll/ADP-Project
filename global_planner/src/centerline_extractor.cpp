@@ -24,7 +24,10 @@ void CenterlineExtractor::extract_centerline(const nav_msgs::msg::OccupancyGrid:
     const double origin_x = map->info.origin.position.x;
     const double origin_y = map->info.origin.position.y;
     
-    // 각 열(column)에 대해 좌측과 우측 경계선을 찾아 중심선 추출
+    // 개선된 중심선 추출: 각 열과 행을 모두 스캔하여 더 정확한 중심선 생성
+    std::vector<Wpnt> temp_centerline;
+    
+    // 1. 각 열(column)에 대해 좌측과 우측 경계선을 찾아 중심선 추출
     for (int x = 0; x < width; x++) {
         int left_boundary = -1;   // 좌측 경계선 (위에서 아래로 스캔)
         int right_boundary = -1;  // 우측 경계선 (아래에서 위로 스캔)
@@ -78,9 +81,9 @@ void CenterlineExtractor::extract_centerline(const nav_msgs::msg::OccupancyGrid:
             point.psi_rad = 0.0;  // 나중에 계산
             point.kappa_radpm = 0.0;  // 나중에 계산
             point.vx_mps = 0.0;
-            point.id = static_cast<int32_t>(centerline_.size());
+            point.id = static_cast<int32_t>(temp_centerline.size());
             
-            centerline_.push_back(point);
+            temp_centerline.push_back(point);
             
             // 경계선 좌표 저장
             double left_y = origin_y + (left_boundary + 0.5) * resolution;
@@ -88,6 +91,72 @@ void CenterlineExtractor::extract_centerline(const nav_msgs::msg::OccupancyGrid:
             left_boundary_.push_back({world_x, left_y});
             right_boundary_.push_back({world_x, right_y});
         }
+    }
+    
+    // 2. 중심선 포인트들을 거리와 방향 기준으로 정렬 및 필터링
+    if (temp_centerline.size() < 2) {
+        centerline_ = temp_centerline;
+        return;
+    }
+    
+    // x 좌표 기준으로 정렬 (트랙이 대부분 수평 방향이므로)
+    std::sort(temp_centerline.begin(), temp_centerline.end(), 
+        [](const Wpnt& a, const Wpnt& b) {
+            return a.x_m < b.x_m;
+        });
+    
+    // 중복 제거 및 너무 가까운 포인트 제거
+    centerline_.clear();
+    const double min_distance = resolution * 0.3;  // 최소 거리
+    
+    for (size_t i = 0; i < temp_centerline.size(); ++i) {
+        if (centerline_.empty()) {
+            centerline_.push_back(temp_centerline[i]);
+            continue;
+        }
+        
+        const Wpnt& last = centerline_.back();
+        double dist = std::sqrt(
+            std::pow(temp_centerline[i].x_m - last.x_m, 2) +
+            std::pow(temp_centerline[i].y_m - last.y_m, 2)
+        );
+        
+        if (dist >= min_distance) {
+            centerline_.push_back(temp_centerline[i]);
+        }
+    }
+    
+    // 3. 중심선 스무딩 (노이즈 제거)
+    if (centerline_.size() > 2) {
+        std::vector<Wpnt> smoothed;
+        smoothed.reserve(centerline_.size());
+        
+        for (size_t i = 0; i < centerline_.size(); ++i) {
+            Wpnt smoothed_point = centerline_[i];
+            
+            // 이동 평균 필터 (양쪽 2개씩 고려)
+            int window = 2;
+            double sum_x = 0.0, sum_y = 0.0;
+            int count = 0;
+            
+            for (int j = -window; j <= window; ++j) {
+                int idx = static_cast<int>(i) + j;
+                if (idx >= 0 && idx < static_cast<int>(centerline_.size())) {
+                    sum_x += centerline_[idx].x_m;
+                    sum_y += centerline_[idx].y_m;
+                    count++;
+                }
+            }
+            
+            if (count > 0) {
+                smoothed_point.x_m = sum_x / count;
+                smoothed_point.y_m = sum_y / count;
+            }
+            
+            smoothed.push_back(smoothed_point);
+        }
+        
+        centerline_ = smoothed;
     }
     
     // yaw 각도 계산 (이전 포인트와 현재 포인트 사이의 방향)

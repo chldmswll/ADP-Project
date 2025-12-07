@@ -34,9 +34,13 @@ private:
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr car_state_sub_;
     rclcpp::Publisher<f110_msgs::msg::WpntArray>::SharedPtr global_waypoints_pub_;
     rclcpp::Publisher<f110_msgs::msg::WpntArray>::SharedPtr shortest_path_pub_;
+    rclcpp::Publisher<f110_msgs::msg::WpntArray>::SharedPtr centerline_waypoints_pub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr waypoints_markers_pub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr shortest_path_markers_pub_;
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr centerline_waypoints_markers_pub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr trackbounds_markers_pub_;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr map_infos_pub_;
+    rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr est_lap_time_pub_;
 
     // 플래너 객체들
     std::shared_ptr<CenterlineExtractor> centerline_extractor_;
