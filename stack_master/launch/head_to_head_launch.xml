@@ -1,0 +1,44 @@
+<launch>
+    <arg name="racecar_version" default="NUC2" />
+    <arg name="LU_table" default="NUC2_hangar_pacejka" />
+    <arg name="overtake_mode" default="spliner" />
+    <arg name="ctrl_algo" default="MAP"/>
+    <arg name="measure" default="False" />
+
+    <!-- 🔥 글로벌 파라미터 노드: 반드시 controller보다 먼저 실행 -->
+    <node pkg="stack_master" exec="global_parameter_node" name="global_parameters" output="screen">
+        <param name="map_path" value="/home/misys/forza_ws/race_stack/stack_master/maps/small_hall" />
+        <param name="racecar_version" value="$(var racecar_version)" />
+        <param name="sim" value="False" />
+        <param name="LU_table" value="$(var LU_table)" />
+        <param name="ctrl_algo" value="$(var ctrl_algo)" />
+        <param name="use_sim_time" value="False" />
+    </node>
+
+    <!-- cpp version controller -->
+    <include file="$(find-pkg-share controller_cpp)/launch/controller_launch.xml">
+        <arg name="mode" value="$(var ctrl_algo)"/>
+        <arg name="LU_table" value="$(var LU_table)" />
+    </include>
+    
+    <!-- state machine -->
+    <include file="$(find-pkg-share state_machine)/launch/state_machine_launch.xml">
+        <arg name="mode" value="head_to_head"/>
+        <arg name="overtake_mode" value="$(var overtake_mode)"/>
+    </include>
+
+    <!-- spline planner -->
+    <group if="$(eval '\'$(var overtake_mode)\' == \'spliner\'')"> 
+        <include file="$(find-pkg-share spline_planner)/launch/spline_planner_launch.xml" />
+    </group>
+
+    <!-- perception -->
+    <include file="$(find-pkg-share perception)/launch/perception_launch.xml">
+        <arg name="param_file" value="$(find-pkg-share stack_master)/config/opponent_tracker_params.yaml" />
+    </include>
+    
+    <include file="$(find-pkg-share perception_cpp)/launch/perception_launch.xml">
+        <arg name="param_file" value="$(find-pkg-share stack_master)/config/opponent_tracker_params_cpp.yaml" />
+    </include>
+
+</launch>
