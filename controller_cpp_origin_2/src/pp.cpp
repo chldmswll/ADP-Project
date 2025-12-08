@@ -141,10 +141,9 @@ std::pair<double,double> PP_Controller::calc_lateral_error_norm() const {
 }
 
 double PP_Controller::speed_adjust_lat_err(double global_speed, double lat_e_norm) const {
-  constexpr double curvature_norm_scale = 0.65;  // calc_hybrid_steering과 동일한 값 사용
   const double lat_e_coeff = clip(lat_err_coeff, 0.0, 1.0);
   const double lat_e = lat_e_norm * 2.0;
-  const double curv = clip(curvature_waypoints_ / curvature_norm_scale, 0.0, 1.0);
+  const double curv = clip(curvature_waypoints_ / 0.65, 0.0, 1.0); // 0.65 하드코딩 된 것이므로 추후 개선 필요 
   return global_speed * (1.0 - lat_e_coeff + lat_e_coeff*std::exp(-lat_e*curv));
 }
 
@@ -235,23 +234,10 @@ PP_Controller::calc_L1_point(double lateral_error) {
   if (idx_nearest_wp_ < 0) idx_nearest_wp_ = 0;
 
   if ((int)wp_.size() - idx_nearest_wp_ > 2) {
-    // 앞쪽 5m 곡률 평균
-    constexpr double curvature_horizon_m = 5.0;   // 필요하면 7.0 등으로 조절
-    constexpr double waypoint_res_m = 0.1;        // 웨이포인트 간격 0.1m 가정
-    const int max_points_ahead = static_cast<int>(curvature_horizon_m / waypoint_res_m);
-    
-    double sum = 0.0;
-    int cnt = 0;
-    const int last_idx = std::min(
-        idx_nearest_wp_ + max_points_ahead,
-        static_cast<int>(wp_.size()) - 1
-    );
-    
-    for (int i = idx_nearest_wp_; i <= last_idx; ++i) {
-      sum += std::abs(wp_[i][5]);  // WpRow[5] = kappa
-      ++cnt;
-    }
-    curvature_waypoints_ = (cnt > 0) ? (sum / static_cast<double>(cnt)) : 0.0;
+    // 평균 곡률 (WpRow[5] = kappa)
+    double sum=0.0; int cnt=0;
+    for (int i=idx_nearest_wp_; i<(int)wp_.size(); ++i) { sum += std::abs(wp_[i][5]); ++cnt; }
+    curvature_waypoints_ = (cnt>0) ? (sum/cnt) : 0.0;
   }
 
   double L1_distance = q_l1 + speed_now_ * m_l1;
@@ -269,9 +255,6 @@ double PP_Controller::calc_hybrid_steering(const Vec2& L1_point,
                                           double lat_e_norm,
                                           const Vec2& v)
 {
-  // 곡률 정규화 스케일 (0.4 ~ 0.8 사이에서 튜닝 가능, 기본값 0.65)
-  constexpr double curvature_norm_scale = 0.45;
-
   // 순수추종 스티어
   const double pp = calc_pp_steering_angle(L1_point, L1_distance, yaw, lat_e_norm, v);
 
@@ -283,25 +266,26 @@ double PP_Controller::calc_hybrid_steering(const Vec2& L1_point,
   const double curvature_future = estimate_future_curvature_change();
 
   // 곡률이 커질수록 스탠리 가중 ↑, 변화량 커지면 추가 가중
+  constexpr double curvature_norm_scale = 0.65; // pp.cpp의 기존 값 유지
   const double w_curv = clip(curvature_now / curvature_norm_scale, 0.0, 1.0);
   const double w_delta = clip(std::abs(curvature_future) / curvature_norm_scale, 0.0, 1.0);
   double stanley_weight_raw = clip(0.5 * w_curv + 0.5 * w_delta, 0.0, 1.0);
 
-  // 가중치 smoothing: 반응 빠르게 (0.9 -> 0.6)
+  // 가중치 자체에 smoothing 추가 (가중치 변화를 부드럽게) - 극단적으로 느리게
   static double stanley_weight_prev = 0.0;
-  constexpr double weight_alpha = 0.6;  // 0.9 -> 0.6 : 반응 더 빠르게
+  constexpr double weight_alpha = 0.9;  // 0.7 -> 0.9로 증가 (가중치 변화를 매우 느리게)
   double stanley_weight = weight_alpha * stanley_weight_prev + (1.0 - weight_alpha) * stanley_weight_raw;
   stanley_weight_prev = stanley_weight;
 
-  // 스탠리 비중 상한 올려서 예민하게 (0.35 -> 0.5, 필요하면 0.6으로 조절)
-  stanley_weight = clip(stanley_weight, 0.0, 0.5);
+  // 스탠리 가중치 최대값을 매우 낮춰서 순수추종 비중 대폭 확보 (극단적으로 안정적으로)
+  stanley_weight = clip(stanley_weight, 0.0, 0.35);  // 0.6 -> 0.35로 대폭 감소
   
   // linear interpolation
   double hybrid_steer = stanley_weight * stanley + (1.0 - stanley_weight) * pp;
 
-  // Low-pass filter: 조향 반응 빠르게 (0.97 -> 0.85)
+  // ---------- Low-pass filter 추가 (극단적으로 강한 smoothing) ----------
   static double steer_prev = 0.0;
-  const double alpha = 0.85;   // 0.97 -> 0.85 : 더 예민한 조향
+  const double alpha = 0.97;  // 0.92 -> 0.97로 증가 (극단적으로 느리고 부드럽게)
 
   double steer_filtered = alpha * steer_prev + (1.0 - alpha) * hybrid_steer;
   steer_prev = steer_filtered;
@@ -315,9 +299,9 @@ double PP_Controller::calc_hybrid_steering_external(double pp_steer, double stan
   // linear interpolation
   double hybrid_steer = stanley_weight * stanley_angle + (1.0 - stanley_weight) * pp_steer;
 
-  // Low-pass filter: 조향 반응 빠르게 (0.97 -> 0.85)
+  // ---------- Low-pass filter 추가 (극단적으로 강한 smoothing) ----------
   static double steer_prev = 0.0;
-  const double alpha = 0.85;   // 0.97 -> 0.85 : 더 예민한 조향
+  const double alpha = 0.97;  // 0.92 -> 0.97로 증가 (극단적으로 느리고 부드럽게)
 
   double steer_filtered = alpha * steer_prev + (1.0 - alpha) * hybrid_steer;
   steer_prev = steer_filtered;
@@ -344,19 +328,18 @@ double PP_Controller::calc_pp_steering_angle(const Vec2& L1_point,
   }
   const double speed_for_lu = speed_adjust_lat_err(speed_la_for_lu, lat_e_norm);
 
-  // eta 계산: 표준 Pure Pursuit 공식 사용
+  // eta
   const Vec2 L1_vec{ L1_point[0] - pose_[0], L1_point[1] - pose_[1] };
+  const double L1_norm = std::hypot(L1_vec[0], L1_vec[1]);
   double eta = 0.0;
-  if (std::hypot(L1_vec[0], L1_vec[1]) <= 1e-8) {
+  if (L1_norm <= 1e-8) {
     logger_warn(std::string("[PP] norm(L1_vector)==0, eta=0"));
   } else {
-    // 표준 Pure Pursuit: atan2를 사용한 eta 계산
-    double alpha = std::atan2(L1_vec[1], L1_vec[0]) - yaw;
-    eta = alpha;
+    const double dot = (-std::sin(yaw))*L1_vec[0] + ( std::cos(yaw))*L1_vec[1];
+    eta = std::asin( clip(dot / L1_norm, -1.0, 1.0) );
   }
 
-  // 표준 Pure Pursuit 조향각 계산
-  double steer = std::atan2(2.0 * wheelbase * std::sin(eta), L1_distance);
+  double steer = std::atan( 2.0*wheelbase*std::sin(eta) / std::max(1e-6, L1_distance) );
 
   steer = acc_scaling(steer);
   steer = speed_steer_scaling(steer, speed_for_lu);
@@ -420,10 +403,9 @@ double PP_Controller::estimate_future_curvature_change()
     return 0.0;
   }
 
-  // 앞쪽 horizon 구간의 곡률 변화 추정 (calc_L1_point와 동일한 개념)
-  constexpr double curvature_delta_horizon_m = 5.0;  // [m] 미래 구간 길이 (3.0 ~ 5.0 사이 조절 가능)
-  constexpr double waypoint_res_m = 0.1;             // 웨이포인트 간격 0.1m 가정
-  const int horizon_idx = static_cast<int>(curvature_delta_horizon_m / waypoint_res_m);
+  constexpr double curvature_delta_horizon = 5.0; // [m] 미래 구간 길이
+  constexpr int points_per_meter = 10; // 0.1m 해상도 가정
+  const int horizon_idx = static_cast<int>(curvature_delta_horizon * points_per_meter);
 
   const int start_idx = idx_nearest_wp_;
   const int mid_idx = std::min(start_idx + horizon_idx / 2, static_cast<int>(wp_.size()) - 1);
