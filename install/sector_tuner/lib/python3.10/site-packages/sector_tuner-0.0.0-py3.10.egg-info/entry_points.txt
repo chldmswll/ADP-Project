@@ -1,8 +1,0 @@
-[console_scripts]
-ot_interpolator = sector_tuner.ot_interpolator:main
-ot_sector_slicer = sector_tuner.ot_sector_slicer:main
-sector_ctrl_slicer = sector_tuner.sector_ctrl_slicer:main
-sector_runtime_ctrl_switcher = sector_tuner.sector_runtime_ctrl_switcher:main
-sector_slicer = sector_tuner.sector_slicer:main
-sector_tuner = sector_tuner.sector_tuner:main
-

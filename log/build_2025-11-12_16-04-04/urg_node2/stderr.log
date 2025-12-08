@@ -1,3 +1,0 @@
-/home/misys/forza_ws/race_stack/urg_node2/urg_library/current/src/urg_sensor.c:1350:8: warning: type qualifiers ignored on function return type [-Wignored-qualifiers]
- 1350 | static const int receive_II_command_response(urg_t *urg,
-      |        ^~~~~

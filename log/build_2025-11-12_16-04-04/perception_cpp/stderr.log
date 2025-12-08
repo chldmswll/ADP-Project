@@ -1,4 +1,0 @@
-/home/misys/forza_ws/race_stack/perception_cpp/src/detect.cpp: In member function ‘std::vector<Obstacle> DetectNode::fit_obstacles_pca_(const std::vector<Eigen::Matrix<float, -1, -1> >&, const std::optional<geometry_msgs::msg::TransformStamped_<std::allocator<void> > >&)’:
-/home/misys/forza_ws/race_stack/perception_cpp/src/detect.cpp:375:13: warning: unused variable ‘len_major’ [-Wunused-variable]
-  375 |       float len_major = p_major.maxCoeff() - p_major.minCoeff();
-      |             ^~~~~~~~~

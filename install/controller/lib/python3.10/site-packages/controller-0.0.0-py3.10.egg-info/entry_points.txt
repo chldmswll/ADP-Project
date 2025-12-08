@@ -1,4 +1,0 @@
-[console_scripts]
-controller = controller.controller_manager:main
-controller_small = controller.controller_manager_small:main
-

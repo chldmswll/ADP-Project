@@ -1,9 +1,0 @@
-{
-  "package_name": "vesc_msgs",
-  "non_idl_tuples": [
-    "/home/misys/forza_ws/race_stack/sensors/vesc/vesc_msgs:msg/VescState.msg",
-    "/home/misys/forza_ws/race_stack/sensors/vesc/vesc_msgs:msg/VescStateStamped.msg",
-    "/home/misys/forza_ws/race_stack/sensors/vesc/vesc_msgs:msg/VescImu.msg",
-    "/home/misys/forza_ws/race_stack/sensors/vesc/vesc_msgs:msg/VescImuStamped.msg"
-  ]
-}

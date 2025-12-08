@@ -1,3 +1,0 @@
-[console_scripts]
-carstate_node = state_estimation.carstate_node:main
-

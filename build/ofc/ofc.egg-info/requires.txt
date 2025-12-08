@@ -1,5 +1,0 @@
-setuptools
-numpy
-tensorflow
-tflite-runtime
-scipy

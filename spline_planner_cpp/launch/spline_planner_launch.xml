@@ -1,0 +1,5 @@
+<launch>
+    <node pkg="spline_planner_cpp" exec="spline_planner_cpp" name="spline_planner" output="screen">
+    </node>
+</launch>
+

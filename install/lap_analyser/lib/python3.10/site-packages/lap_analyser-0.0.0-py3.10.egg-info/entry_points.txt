@@ -1,3 +1,0 @@
-[console_scripts]
-lap_analyser = lap_analyser.lap_analyser:main
-

@@ -1,8 +1,0 @@
-[console_scripts]
-bag_recorder = ofc.bag_recorder:main
-bag_recorder_sim = ofc.bag_recorder_sim:main
-enabled_guard = ofc.enabled_guard:main
-ftg = ofc.ftg:main
-joy_controller = ofc.joy_controller:main
-tln_inference = ofc.inference_node:main
-

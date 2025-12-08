@@ -1,1 +1,0 @@
-/usr/bin/c++ -fPIC -shared -Wl,-soname,libfrenet_conversion_cpp.so -o libfrenet_conversion_cpp.so CMakeFiles/frenet_conversion_cpp.dir/src/frenet_converter_cpp.cpp.o 

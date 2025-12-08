@@ -1,6 +1,0 @@
-Invoking command in '/home/misys/forza_ws/race_stack/build/slam_toolbox': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake /home/misys/forza_ws/race_stack/slam_toolbox -DCMAKE_INSTALL_PREFIX=/home/misys/forza_ws/race_stack/install/slam_toolbox
-Invoked command in '/home/misys/forza_ws/race_stack/build/slam_toolbox' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake /home/misys/forza_ws/race_stack/slam_toolbox -DCMAKE_INSTALL_PREFIX=/home/misys/forza_ws/race_stack/install/slam_toolbox
-Invoking command in '/home/misys/forza_ws/race_stack/build/slam_toolbox': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/misys/forza_ws/race_stack/build/slam_toolbox -- -j18 -l18
-Invoked command in '/home/misys/forza_ws/race_stack/build/slam_toolbox' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/misys/forza_ws/race_stack/build/slam_toolbox -- -j18 -l18
-Invoking command in '/home/misys/forza_ws/race_stack/build/slam_toolbox': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/misys/forza_ws/race_stack/build/slam_toolbox
-Invoked command in '/home/misys/forza_ws/race_stack/build/slam_toolbox' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/misys/forza_ws/race_stack/build/slam_toolbox

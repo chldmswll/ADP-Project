@@ -1,9 +1,0 @@
-/home/misys/forza_ws/race_stack/build/vesc/CMakeFiles/uninstall.dir
-/home/misys/forza_ws/race_stack/build/vesc/CMakeFiles/vesc_uninstall.dir
-/home/misys/forza_ws/race_stack/build/vesc/CMakeFiles/test.dir
-/home/misys/forza_ws/race_stack/build/vesc/CMakeFiles/edit_cache.dir
-/home/misys/forza_ws/race_stack/build/vesc/CMakeFiles/rebuild_cache.dir
-/home/misys/forza_ws/race_stack/build/vesc/CMakeFiles/list_install_components.dir
-/home/misys/forza_ws/race_stack/build/vesc/CMakeFiles/install.dir
-/home/misys/forza_ws/race_stack/build/vesc/CMakeFiles/install/local.dir
-/home/misys/forza_ws/race_stack/build/vesc/CMakeFiles/install/strip.dir

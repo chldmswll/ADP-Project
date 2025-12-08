@@ -1,3 +1,0 @@
-[console_scripts]
-spline_planner = spline_planner.spline_planner:main
-
