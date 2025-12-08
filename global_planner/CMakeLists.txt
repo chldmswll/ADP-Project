@@ -1,126 +1,158 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.8)
 project(global_planner)
 
-# C++17 표준 사용 (std::filesystem을 위해 필요)
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
 
-# ROS2 의존성 패키지
+# Find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
-find_package(sensor_msgs REQUIRED)
-find_package(nav_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(f110_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 
-# Include 디렉토리 설정
+# Find OpenCV
+find_package(OpenCV REQUIRED)
+find_package(Eigen3 REQUIRED)
+find_package(yaml-cpp REQUIRED)
+
+# nlohmann/json (header-only)
+find_package(nlohmann_json QUIET)
+if(NOT nlohmann_json_FOUND)
+  # If not found, try to use the header-only version
+  include(FetchContent)
+  FetchContent_Declare(
+    json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG v3.11.2
+  )
+  FetchContent_MakeAvailable(json)
+endif()
+
+# Include directories
 include_directories(include)
 
-add_library(utils_lib src/utils.cpp)
-target_include_directories(utils_lib PUBLIC
-	include
+# Source files
+set(SOURCES
+  src/global_planner_node.cpp
+  src/global_planner_logic.cpp
+  src/global_planner_utils.cpp
+  src/global_trajectory_publisher.cpp
+  src/readwrite_global_waypoints.cpp
+  src/trajectory_optimizer_wrapper.cpp
 )
 
-ament_target_dependencies(utils_lib
-	rclcpp
+# Header files
+set(HEADERS
+  include/global_planner/global_planner_logic.hpp
+  include/global_planner/global_planner_utils.hpp
+  include/global_planner/readwrite_global_waypoints.hpp
 )
 
-# 라이브러리 생성 (클래스 구현용)
-add_library(centerline_extractor_lib src/centerline_extractor.cpp)
-add_library(curvature_planner_lib src/curvature_planner.cpp)
-add_library(velocity_planner_lib src/velocity_planner.cpp)
-add_library(time_optimal_planner_lib src/time_optimal_planner.cpp)
-add_library(file_writer_lib src/file_writer.cpp)
+# Executable: global_planner (matches launch file)
+add_executable(global_planner
+  src/global_planner_node.cpp
+  src/global_planner_logic.cpp
+  src/global_planner_utils.cpp
+  src/readwrite_global_waypoints.cpp
+  src/trajectory_optimizer_wrapper.cpp
+)
 
-# 소스 파일 추가 (실행 파일)
-add_executable(global_planner src/global_planner_node.cpp)
-add_executable(global_trajectory_publisher src/global_trajectory_publisher.cpp)
-
-# ROS2 의존성 연결
-ament_target_dependencies(global_planner 
-  rclcpp 
-  std_msgs 
-  sensor_msgs 
-  nav_msgs 
+ament_target_dependencies(global_planner
+  rclcpp
+  std_msgs
   geometry_msgs
+  nav_msgs
   visualization_msgs
   f110_msgs
-  )
+  tf2
+  tf2_ros
+  tf2_geometry_msgs
+  ament_index_cpp
+)
+
+target_include_directories(global_planner PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+
+target_link_libraries(global_planner
+  ${OpenCV_LIBS}
+  Eigen3::Eigen
+  yaml-cpp
+)
+
+if(TARGET nlohmann_json::nlohmann_json)
+  target_link_libraries(global_planner nlohmann_json::nlohmann_json)
+elseif(TARGET json)
+  target_link_libraries(global_planner json)
+endif()
+
+# Executable: global_trajectory_publisher
+add_executable(global_trajectory_publisher
+  src/global_trajectory_publisher.cpp
+  src/readwrite_global_waypoints.cpp
+)
 
 ament_target_dependencies(global_trajectory_publisher
   rclcpp
+  std_msgs
+  geometry_msgs
   visualization_msgs
   f110_msgs
-  )
-
-# 라이브러리 의존성
-ament_target_dependencies(centerline_extractor_lib 
-  rclcpp 
-  nav_msgs
-  f110_msgs
-  )
-
-ament_target_dependencies(curvature_planner_lib 
-  rclcpp 
-  f110_msgs
-  )
-
-ament_target_dependencies(velocity_planner_lib 
-  rclcpp 
-  f110_msgs
-  )
-
-ament_target_dependencies(time_optimal_planner_lib 
-  rclcpp 
-  f110_msgs
-  )
-
-ament_target_dependencies(utils_lib
-  rclcpp
-  f110_msgs
-  )
-
-ament_target_dependencies(file_writer_lib
-  rclcpp
-  std_msgs
-  f110_msgs
-  )
-
-# Utils 라이브러리 링크
-target_link_libraries(centerline_extractor_lib utils_lib)
-target_link_libraries(curvature_planner_lib utils_lib)
-target_link_libraries(velocity_planner_lib utils_lib)
-target_link_libraries(time_optimal_planner_lib utils_lib)
-target_link_libraries(global_planner utils_lib)
-
-# 플래너 라이브러리들을 global_planner에 링크
-target_link_libraries(global_planner 
-  centerline_extractor_lib
-  curvature_planner_lib
-  velocity_planner_lib
-  time_optimal_planner_lib
-  file_writer_lib
+  ament_index_cpp
 )
 
+target_include_directories(global_trajectory_publisher PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
 
+target_link_libraries(global_trajectory_publisher
+  yaml-cpp
+)
 
+if(TARGET nlohmann_json::nlohmann_json)
+  target_link_libraries(global_trajectory_publisher nlohmann_json::nlohmann_json)
+elseif(TARGET json)
+  target_link_libraries(global_trajectory_publisher json)
+endif()
 
-# 설치
+# Install
 install(TARGETS
   global_planner
   global_trajectory_publisher
-  centerline_extractor_lib
-  curvature_planner_lib
-  velocity_planner_lib
-  time_optimal_planner_lib
-  file_writer_lib
-  utils_lib
-  DESTINATION lib/${PROJECT_NAME})
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 install(DIRECTORY include/
   DESTINATION include
 )
+
+# Install Python modules
+install(DIRECTORY python_modules/
+  DESTINATION share/${PROJECT_NAME}/python_modules
+)
+
+# Install params and opt_mintime_traj directories for global_racetrajectory_optimization
+install(DIRECTORY python_modules/global_racetrajectory_optimization/global_racetrajectory_optimization/params/
+  DESTINATION share/${PROJECT_NAME}/python_modules/global_racetrajectory_optimization/global_racetrajectory_optimization/params
+)
+
+install(DIRECTORY python_modules/global_racetrajectory_optimization/global_racetrajectory_optimization/opt_mintime_traj/
+  DESTINATION share/${PROJECT_NAME}/python_modules/global_racetrajectory_optimization/global_racetrajectory_optimization/opt_mintime_traj
+)
+
+if(BUILD_TESTING)
+  find_package(ament_lint_auto REQUIRED)
+  ament_lint_auto_find_test_dependencies()
+endif()
 
 ament_package()

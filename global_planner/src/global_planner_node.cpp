@@ -1,345 +1,229 @@
-//메인 노드 : 경로 생성, 속도 제한 계산 및 발행
-
-#include "rclcpp/rclcpp.hpp"
-#include "std_msgs/msg/string.hpp"
-#include "f110_msgs/msg/wpnt_array.hpp"
-#include "sensor_msgs/msg/point_cloud2.hpp"
-#include "nav_msgs/msg/occupancy_grid.hpp"
-#include "geometry_msgs/msg/pose_stamped.hpp"
-#include "visualization_msgs/msg/marker_array.hpp"
-#include "visualization_msgs/msg/marker.hpp"
-#include "global_planner_node.hpp"
-#include "centerline_extractor.hpp"
-#include "curvature_planner.hpp"
-#include "velocity_planner.hpp"
-#include "time_optimal_planner.hpp"
-#include "file_writer.hpp"
-#include <cmath>
+#include "global_planner/global_planner_logic.hpp"
+#include "global_planner/readwrite_global_waypoints.hpp"
+#include <rclcpp/rclcpp.hpp>
+#include <nav_msgs/msg/occupancy_grid.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <f110_msgs/msg/wpnt_array.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
+#include <std_msgs/msg/string.hpp>
+#include <std_msgs/msg/float32.hpp>
+#include <ament_index_cpp/get_package_share_directory.hpp>
 #include <filesystem>
-#include <iostream>
-#include <exception>
 
-using namespace std::chrono_literals;
+class GlobalPlanner : public rclcpp::Node
+{
+public:
+  GlobalPlanner()
+  : Node("global_planner_node")
+  {
+    // Declare parameters (allow undeclared to accept from launch file)
+    this->declare_parameter("rate", rclcpp::ParameterValue(10.0));
+    this->declare_parameter<std::string>("map_name", "map");
+    this->declare_parameter<bool>("create_map", false);
+    this->declare_parameter<bool>("map_editor", false);
+    this->declare_parameter<bool>("reverse_mapping", false);
+    this->declare_parameter<double>("safety_width", 0.3);
+    this->declare_parameter<double>("safety_width_sp", 0.2);
+    this->declare_parameter<double>("occupancy_grid_threshold", 0.65);
+    this->declare_parameter<int>("filter_kernel_size", 3);
+    this->declare_parameter<bool>("show_plots", false);
+    this->declare_parameter<int>("required_laps", 1);
 
-GlobalPlannerNode::GlobalPlannerNode() : Node("global_planner_node") {
-        RCLCPP_INFO(this->get_logger(), "Global planner node starting...");
-        
-        // 구독자 정의
-        map_sub_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
-            "/map", 10, std::bind(&GlobalPlannerNode::map_callback, this, std::placeholders::_1));
-        RCLCPP_INFO(this->get_logger(), "Subscribed to /map");
-        
-        car_state_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-            "/car_state/pose", 10, std::bind(&GlobalPlannerNode::car_state_callback, this, std::placeholders::_1));
-        RCLCPP_INFO(this->get_logger(), "Subscribed to /car_state/pose");
-
-        // 발행자 정의 (내부 토픽으로 발행, global_trajectory_publisher가 구독)
-        global_waypoints_pub_ = this->create_publisher<f110_msgs::msg::WpntArray>("/global_planner/waypoints", 10);
-        shortest_path_pub_ = this->create_publisher<f110_msgs::msg::WpntArray>("/global_planner/shortest_path", 10);
-        centerline_waypoints_pub_ = this->create_publisher<f110_msgs::msg::WpntArray>("/global_planner/centerline_waypoints", 10);
-        waypoints_markers_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/global_planner/waypoints/markers", 10);
-        shortest_path_markers_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/global_planner/shortest_path/markers", 10);
-        centerline_waypoints_markers_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/global_planner/centerline_waypoints/markers", 10);
-        trackbounds_markers_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/global_planner/trackbounds/markers", 10);
-        map_infos_pub_ = this->create_publisher<std_msgs::msg::String>("/global_planner/map_infos", 10);
-        est_lap_time_pub_ = this->create_publisher<std_msgs::msg::Float32>("/global_planner/estimated_lap_time", 10);
-        RCLCPP_INFO(this->get_logger(), "Publishing to /global_planner/waypoints");
-        RCLCPP_INFO(this->get_logger(), "Publishing to /global_planner/shortest_path");
-        RCLCPP_INFO(this->get_logger(), "Publishing to /global_planner/centerline_waypoints");
-        RCLCPP_INFO(this->get_logger(), "Publishing to /global_planner/waypoints/markers");
-        RCLCPP_INFO(this->get_logger(), "Publishing to /global_planner/shortest_path/markers");
-        RCLCPP_INFO(this->get_logger(), "Publishing to /global_planner/centerline_waypoints/markers");
-        RCLCPP_INFO(this->get_logger(), "Publishing to /global_planner/trackbounds/markers");
-        RCLCPP_INFO(this->get_logger(), "Publishing to /global_planner/map_infos");
-        RCLCPP_INFO(this->get_logger(), "Publishing to /global_planner/estimated_lap_time");
-        
-        // 초기화
-        centerline_extractor_ = std::make_shared<CenterlineExtractor>();
-        curvature_planner_ = std::make_shared<CurvaturePlanner>();
-        velocity_planner_ = std::make_shared<VelocityPlanner>();
-        time_optimal_planner_ = std::make_shared<TimeOptimalPlanner>();
-        file_writer_ = std::make_shared<FileWriter>();
-        
-        // 파일 저장 설정 (파라미터 또는 환경변수에서 가져올 수 있음)
-        this->declare_parameter<std::string>("map_dir", "");
-        this->declare_parameter<bool>("save_json", true);
-        this->get_parameter("map_dir", map_dir_);
-        this->get_parameter("save_json", save_json_enabled_);
-        
-        if (map_dir_.empty()) {
-            // 기본값: 현재 작업 디렉토리
-            map_dir_ = std::filesystem::current_path().string();
-        }
-        
-        RCLCPP_INFO(this->get_logger(), "Global planner node initialized, waiting for map...");
-        RCLCPP_INFO(this->get_logger(), "JSON save enabled: %s, map_dir: %s", 
-                    save_json_enabled_ ? "true" : "false", map_dir_.c_str());
-}
-
-void GlobalPlannerNode::map_callback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
-        RCLCPP_INFO(this->get_logger(), "Received map: %dx%d, resolution: %.3f", 
-                    msg->info.width, msg->info.height, msg->info.resolution);
-        
-        // 트랙 지도 받음 (centerline 추출)
-        centerline_extractor_->extract_centerline(msg);
-        const auto& centerline = centerline_extractor_->get_centerline();
-        RCLCPP_INFO(this->get_logger(), "Extracted centerline with %zu points", centerline.size());
-
-        if (centerline.empty()) {
-            RCLCPP_WARN(this->get_logger(), "Centerline is empty, skipping path generation");
-            return;
-        }
-
-        // 최소곡률 경로 생성
-        auto curvature_path = curvature_planner_->generate_minimum_curvature_path(centerline);
-        RCLCPP_INFO(this->get_logger(), "Generated curvature path with %zu waypoints", curvature_path.wpnts.size());
-
-        // 속도 제한 계산 및 경로 최적화
-        auto velocity_profile = velocity_planner_->generate_velocity_profile(curvature_path);
-        RCLCPP_INFO(this->get_logger(), "Generated velocity profile with %zu waypoints", velocity_profile.wpnts.size());
-
-        // 최단시간 경로 계산
-        auto time_optimal_path = time_optimal_planner_->optimize_time_path(velocity_profile);
-        RCLCPP_INFO(this->get_logger(), "Generated time optimal path with %zu waypoints", time_optimal_path.wpnts.size());
-
-        // 최단 경로 생성 (centerline 기반)
-        auto shortest_path = generate_shortest_path(centerline);
-        RCLCPP_INFO(this->get_logger(), "Generated shortest path with %zu waypoints", shortest_path.wpnts.size());
-
-        // centerline을 WpntArray로 변환
-        f110_msgs::msg::WpntArray centerline_array;
-        centerline_array.header.frame_id = "map";
-        centerline_array.header.stamp = this->now();
-        for (size_t i = 0; i < centerline.size(); ++i) {
-            f110_msgs::msg::Wpnt wpnt = centerline[i];
-            wpnt.id = static_cast<int32_t>(i);
-            centerline_array.wpnts.push_back(wpnt);
-        }
-
-        // 결과 발행
-        time_optimal_path.header.stamp = this->now();
-        time_optimal_path.header.frame_id = "map";
-        global_waypoints_pub_->publish(time_optimal_path);
-        
-        shortest_path.header.stamp = this->now();
-        shortest_path.header.frame_id = "map";
-        shortest_path_pub_->publish(shortest_path);
-        
-        centerline_waypoints_pub_->publish(centerline_array);
-        
-        // 마커 발행
-        auto waypoints_markers = create_waypoints_markers(time_optimal_path);
-        waypoints_markers_pub_->publish(waypoints_markers);
-        
-        auto shortest_path_markers = create_waypoints_markers(shortest_path);
-        shortest_path_markers_pub_->publish(shortest_path_markers);
-        
-        auto centerline_markers = create_waypoints_markers(centerline_array);
-        centerline_waypoints_markers_pub_->publish(centerline_markers);
-        
-        auto trackbounds_markers = create_trackbounds_markers();
-        trackbounds_markers_pub_->publish(trackbounds_markers);
-        
-        // map_infos 및 estimated_lap_time 발행
-        std_msgs::msg::String map_info_str;
-        map_info_str.data = "Generated by global_planner (C++)";
-        map_infos_pub_->publish(map_info_str);
-        
-        std_msgs::msg::Float32 est_lap_time;
-        est_lap_time.data = 0.0f; // TODO: 실제 랩 타임 계산 필요
-        est_lap_time_pub_->publish(est_lap_time);
-        
-        RCLCPP_INFO(this->get_logger(), "Published waypoints, markers, trackbounds, centerline, map_infos, and estimated_lap_time");
-        
-        // global_waypoints.json 파일 저장
-        if (save_json_enabled_) {
-            // map_info_str과 est_lap_time 준비 (기본값)
-            std_msgs::msg::String map_info_str;
-            map_info_str.data = "Generated by global_planner (C++)";
-            
-            std_msgs::msg::Float32 est_lap_time;
-            est_lap_time.data = 0.0f; // 나중에 계산 가능
-            
-            // JSON 파일 저장
-            bool success = file_writer_->write_global_waypoints(
-                map_dir_,
-                map_info_str,
-                est_lap_time,
-                centerline_array,
-                time_optimal_path,
-                shortest_path
-            );
-            
-            if (success) {
-                RCLCPP_INFO(this->get_logger(), "Successfully saved global_waypoints.json to %s", map_dir_.c_str());
-            } else {
-                RCLCPP_WARN(this->get_logger(), "Failed to save global_waypoints.json");
-            }
-            
-            // speed_scaling.yaml 파일 저장
-            std::string speed_scaling_path = map_dir_;
-            if (!speed_scaling_path.empty() && speed_scaling_path.back() != '/') {
-                speed_scaling_path += "/";
-            }
-            speed_scaling_path += "speed_scaling.yaml";
-            
-            bool speed_scaling_success = file_writer_->save_speed_scaling(
-                time_optimal_path,
-                speed_scaling_path,
-                9,  // n_sectors: 기본값 9개 섹터
-                0.8f  // global_limit: 기본값 0.8
-            );
-            
-            if (speed_scaling_success) {
-                RCLCPP_INFO(this->get_logger(), "Successfully saved speed_scaling.yaml to %s", speed_scaling_path.c_str());
-            } else {
-                RCLCPP_WARN(this->get_logger(), "Failed to save speed_scaling.yaml");
-            }
-        }
+    // Get rate parameter - handle both int and double from YAML
+    double rate = 10.0;
+    if (this->has_parameter("rate")) {
+      auto rate_param = this->get_parameter("rate");
+      if (rate_param.get_type() == rclcpp::ParameterType::PARAMETER_DOUBLE) {
+        rate = rate_param.as_double();
+      } else if (rate_param.get_type() == rclcpp::ParameterType::PARAMETER_INTEGER) {
+        rate = static_cast<double>(rate_param.as_int());
+      }
     }
+    std::string map_name = this->get_parameter("map_name").as_string();
+    bool create_map = this->get_parameter("create_map").as_bool();
+    bool map_editor = this->get_parameter("map_editor").as_bool();
+    bool reverse_mapping = this->get_parameter("reverse_mapping").as_bool();
+    double safety_width = this->get_parameter("safety_width").as_double();
+    double safety_width_sp = this->get_parameter("safety_width_sp").as_double();
+    double occupancy_grid_threshold = this->get_parameter("occupancy_grid_threshold").as_double();
+    int filter_kernel_size = this->get_parameter("filter_kernel_size").as_int();
+    bool show_plots = this->get_parameter("show_plots").as_bool();
+    int required_laps = this->get_parameter("required_laps").as_int();
 
-void GlobalPlannerNode::car_state_callback(const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
-        // 차량 상태 처리 (예: 현재 위치)
-        RCLCPP_DEBUG(this->get_logger(), "Received car state: x=%.2f, y=%.2f", 
-                     msg->pose.position.x, msg->pose.position.y);
-    }
-
-visualization_msgs::msg::MarkerArray GlobalPlannerNode::create_trackbounds_markers() {
-        visualization_msgs::msg::MarkerArray markers;
-        markers.markers.clear();
-        
-        const auto& left_boundary = centerline_extractor_->get_left_boundary();
-        const auto& right_boundary = centerline_extractor_->get_right_boundary();
-        
-        int id = 0;
-        
-        // 우측 경계선 (파란색)
-        for (const auto& point : right_boundary) {
-            visualization_msgs::msg::Marker marker;
-            marker.header.frame_id = "map";
-            marker.header.stamp = this->now();
-            marker.id = id++;
-            marker.type = visualization_msgs::msg::Marker::SPHERE;
-            marker.action = visualization_msgs::msg::Marker::ADD;
-            marker.pose.position.x = point.first;
-            marker.pose.position.y = point.second;
-            marker.pose.position.z = 0.0;
-            marker.pose.orientation.w = 1.0;
-            marker.scale.x = 0.05;
-            marker.scale.y = 0.05;
-            marker.scale.z = 0.05;
-            marker.color.a = 1.0;
-            marker.color.r = 0.5;
-            marker.color.b = 0.5;
-            markers.markers.push_back(marker);
-        }
-        
-        // 좌측 경계선 (녹색)
-        for (const auto& point : left_boundary) {
-            visualization_msgs::msg::Marker marker;
-            marker.header.frame_id = "map";
-            marker.header.stamp = this->now();
-            marker.id = id++;
-            marker.type = visualization_msgs::msg::Marker::SPHERE;
-            marker.action = visualization_msgs::msg::Marker::ADD;
-            marker.pose.position.x = point.first;
-            marker.pose.position.y = point.second;
-            marker.pose.position.z = 0.0;
-            marker.pose.orientation.w = 1.0;
-            marker.scale.x = 0.05;
-            marker.scale.y = 0.05;
-            marker.scale.z = 0.05;
-            marker.color.a = 1.0;
-            marker.color.r = 0.5;
-            marker.color.g = 1.0;
-            markers.markers.push_back(marker);
-        }
-        
-        return markers;
-    }
-
-visualization_msgs::msg::MarkerArray GlobalPlannerNode::create_waypoints_markers(const f110_msgs::msg::WpntArray& waypoints) {
-        visualization_msgs::msg::MarkerArray markers;
-        markers.markers.clear();
-        
-        if (waypoints.wpnts.empty()) {
-            return markers;
-        }
-        
-        // 속도에 따른 최대값 찾기
-        double max_vx = 0.0;
-        for (const auto& wpnt : waypoints.wpnts) {
-            if (wpnt.vx_mps > max_vx) {
-                max_vx = wpnt.vx_mps;
-            }
-        }
-        
-        if (max_vx < 1e-6) {
-            max_vx = 1.0; // 0으로 나누기 방지
-        }
-        
-        int id = 0;
-        for (const auto& wpnt : waypoints.wpnts) {
-            visualization_msgs::msg::Marker marker;
-            marker.header.frame_id = "map";
-            marker.header.stamp = this->now();
-            marker.id = id++;
-            marker.type = visualization_msgs::msg::Marker::CYLINDER;
-            marker.action = visualization_msgs::msg::Marker::ADD;
-            marker.pose.position.x = wpnt.x_m;
-            marker.pose.position.y = wpnt.y_m;
-            marker.pose.position.z = wpnt.vx_mps / max_vx / 2.0; // 속도에 비례한 높이
-            marker.pose.orientation.w = 1.0;
-            marker.scale.x = 0.1;
-            marker.scale.y = 0.1;
-            marker.scale.z = wpnt.vx_mps / max_vx; // 속도에 비례한 높이
-            marker.color.a = 1.0;
-            marker.color.r = 1.0; // 빨간색
-            marker.color.g = 0.0;
-            marker.color.b = 0.0;
-            markers.markers.push_back(marker);
-        }
-        
-        return markers;
-    }
-
-f110_msgs::msg::WpntArray GlobalPlannerNode::generate_shortest_path(const std::vector<f110_msgs::msg::Wpnt>& centerline) {
-        f110_msgs::msg::WpntArray shortest_path;
-        shortest_path.header.frame_id = "map";
-        shortest_path.header.stamp = this->now();
-        
-        if (centerline.empty()) {
-            return shortest_path;
-        }
-        
-        // 최단 경로는 centerline을 따라 최대 속도로 주행하는 경로
-        for (size_t i = 0; i < centerline.size(); i++) {
-            f110_msgs::msg::Wpnt wpnt = centerline[i];
-            wpnt.id = static_cast<int32_t>(i);
-            wpnt.vx_mps = 10.0; // 최대 속도 (기본값)
-            wpnt.kappa_radpm = 0.0; // 직선으로 가정
-            shortest_path.wpnts.push_back(wpnt);
-        }
-        
-        return shortest_path;
-    }
-
-
-int main(int argc, char * argv[]) {
+    // Get map source path
+    std::string map_dir = "/home/misys/forza_ws/race_stack/stack_master/maps/" + map_name;
     try {
-        rclcpp::init(argc, argv);
-        
-        auto node = std::make_shared<GlobalPlannerNode>();
-        RCLCPP_INFO(node->get_logger(), "Starting global_planner node...");
-        
-        rclcpp::spin(node);
-        rclcpp::shutdown();
-        return 0;
-    } catch (const std::exception& e) {
-        std::cerr << "Exception in global_planner: " << e.what() << std::endl;
-        return 1;
+      std::string share_dir = ament_index_cpp::get_package_share_directory("stack_master");
+      std::filesystem::path path(share_dir);
+      // share_dir is typically: install/stack_master/share/stack_master
+      // We want to go to: src/race_stack/stack_master/maps/map_name
+      // So we go: install -> .. -> src/race_stack/stack_master/maps
+      path = path.parent_path().parent_path() / "src/race_stack/stack_master/maps" / map_name;
+      if (std::filesystem::exists(path)) {
+        map_dir = path.string();
+      } else {
+        // Try alternative: assume maps are in share directory
+        path = std::filesystem::path(share_dir).parent_path().parent_path().parent_path() / "stack_master/maps" / map_name;
+        if (std::filesystem::exists(path)) {
+          map_dir = path.string();
+        }
+      }
     } catch (...) {
-        std::cerr << "Unknown exception in global_planner" << std::endl;
-        return 1;
+      RCLCPP_WARN(this->get_logger(), "Could not get package share directory, using default path");
     }
+
+    // Create logic instance
+    logic_ = std::make_unique<global_planner::GlobalPlannerLogic>(
+      safety_width,
+      safety_width_sp,
+      occupancy_grid_threshold,
+      map_editor,
+      create_map,
+      map_name,
+      map_dir,
+      "",  // finish_script_path
+      "",  // input_path
+      show_plots,
+      filter_kernel_size,
+      required_laps,
+      reverse_mapping,
+      [this](const std::string & msg) { RCLCPP_INFO(this->get_logger(), "%s", msg.c_str()); },
+      [this](const std::string & msg) { RCLCPP_WARN(this->get_logger(), "%s", msg.c_str()); },
+      [this](const std::string & msg) { RCLCPP_ERROR(this->get_logger(), "%s", msg.c_str()); }
+    );
+
+    // Subscribers
+    map_sub_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
+      "/map", 10, std::bind(&GlobalPlanner::map_cb, this, std::placeholders::_1));
+    pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+      "/car_state/pose", 10, std::bind(&GlobalPlanner::pose_cb, this, std::placeholders::_1));
+
+    RCLCPP_INFO(this->get_logger(), "Waiting for map and car pose...");
+
+    // Publishers
+    global_waypoints_pub_ = this->create_publisher<f110_msgs::msg::WpntArray>("/global_waypoints", 10);
+    centerline_waypoints_pub_ = this->create_publisher<f110_msgs::msg::WpntArray>("/centerline_waypoints", 10);
+    global_waypoints_markers_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(
+      "/global_waypoints/markers", 10);
+    centerline_waypoints_markers_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(
+      "/centerline_waypoints/markers", 10);
+    track_bounds_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(
+      "/trackbounds/markers", 10);
+    shortest_path_waypoints_pub_ = this->create_publisher<f110_msgs::msg::WpntArray>(
+      "/global_waypoints/shortest_path", 10);
+    shortest_path_waypoints_markers_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(
+      "/global_waypoints/shortest_path/markers", 10);
+    map_infos_pub_ = this->create_publisher<std_msgs::msg::String>("/map_infos", 10);
+    est_lap_time_pub_ = this->create_publisher<std_msgs::msg::Float32>("/estimated_lap_time", 10);
+
+    // Main loop
+    timer_ = this->create_wall_timer(
+      std::chrono::milliseconds(static_cast<int>(1000.0 / rate)),
+      std::bind(&GlobalPlanner::global_plan_callback, this));
+
+    map_name_ = map_name;
+    map_editor_ = map_editor;
+    create_map_ = create_map;
+  }
+
+private:
+  void map_cb(const nav_msgs::msg::OccupancyGrid::SharedPtr msg)
+  {
+    logic_->update_map(*msg);
+  }
+
+  void pose_cb(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
+  {
+    logic_->update_pose(*msg);
+  }
+
+  void global_plan_callback()
+  {
+    try {
+      auto [success, map_name] = logic_->global_plan_logic();
+      if (success) {
+        RCLCPP_WARN(this->get_logger(), "Global planner succeeded: map_name=%s", map_name.c_str());
+        read_and_publish(map_editor_, create_map_);
+        RCLCPP_INFO(this->get_logger(), "Killing global planner...");
+        rclcpp::shutdown();
+      }
+    } catch (const std::exception & e) {
+      RCLCPP_ERROR(this->get_logger(), "%s", e.what());
+      RCLCPP_WARN(this->get_logger(), "Killing global planner...");
+      rclcpp::shutdown();
+    }
+  }
+
+  void read_and_publish(bool map_editor_mode, bool create_map)
+  {
+    if (map_editor_mode && create_map) {
+      RCLCPP_WARN(this->get_logger(),
+        "In map_editor_mapping mode. Waypoints are not calculated, and thus not published.");
+      return;
+    }
+
+    try {
+      std::string map_dir = "/home/misys/forza_ws/race_stack/stack_master/maps/" + map_name_;
+      try {
+        std::string share_dir = ament_index_cpp::get_package_share_directory("stack_master");
+        std::filesystem::path path(share_dir);
+        // share_dir is typically: install/stack_master/share/stack_master
+        // We want to go to: src/race_stack/stack_master/maps/map_name
+        path = path.parent_path().parent_path() / "src/race_stack/stack_master/maps" / map_name_;
+        if (std::filesystem::exists(path)) {
+          map_dir = path.string();
+        } else {
+          // Try alternative: assume maps are in share directory
+          path = std::filesystem::path(share_dir).parent_path().parent_path().parent_path() / "stack_master/maps" / map_name_;
+          if (std::filesystem::exists(path)) {
+            map_dir = path.string();
+          }
+        }
+      } catch (...) {
+        // Use default path
+      }
+
+      auto [map_infos, est_lap_time, centerline_markers, centerline_wpnts,
+            glb_markers, glb_wpnts, glb_sp_markers, glb_sp_wpnts, track_bounds] =
+        global_planner::read_global_waypoints(map_dir);
+
+      global_waypoints_pub_->publish(glb_wpnts);
+      centerline_waypoints_pub_->publish(centerline_wpnts);
+      centerline_waypoints_markers_pub_->publish(centerline_markers);
+      global_waypoints_markers_pub_->publish(glb_markers);
+      track_bounds_pub_->publish(track_bounds);
+      shortest_path_waypoints_pub_->publish(glb_sp_wpnts);
+      shortest_path_waypoints_markers_pub_->publish(glb_sp_markers);
+      map_infos_pub_->publish(map_infos);
+      est_lap_time_pub_->publish(est_lap_time);
+    } catch (const std::exception & e) {
+      RCLCPP_ERROR(this->get_logger(), "%s. Not republishing waypoints.", e.what());
+    }
+  }
+
+  std::unique_ptr<global_planner::GlobalPlannerLogic> logic_;
+  rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub_;
+  rclcpp::Publisher<f110_msgs::msg::WpntArray>::SharedPtr global_waypoints_pub_;
+  rclcpp::Publisher<f110_msgs::msg::WpntArray>::SharedPtr centerline_waypoints_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr global_waypoints_markers_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr centerline_waypoints_markers_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr track_bounds_pub_;
+  rclcpp::Publisher<f110_msgs::msg::WpntArray>::SharedPtr shortest_path_waypoints_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr shortest_path_waypoints_markers_pub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr map_infos_pub_;
+  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr est_lap_time_pub_;
+  rclcpp::TimerBase::SharedPtr timer_;
+  std::string map_name_;
+  bool map_editor_;
+  bool create_map_;
+};
+
+int main(int argc, char ** argv)
+{
+  rclcpp::init(argc, argv);
+  auto node = std::make_shared<GlobalPlanner>();
+  rclcpp::spin(node);
+  rclcpp::shutdown();
+  return 0;
 }
