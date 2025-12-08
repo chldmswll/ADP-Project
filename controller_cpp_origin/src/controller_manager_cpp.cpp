@@ -19,7 +19,6 @@
 #include "ackermann_msgs/msg/ackermann_drive_stamped.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "std_msgs/msg/float64.hpp"
-#include "std_msgs/msg/int32.hpp"
 #include "sensor_msgs/msg/imu.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include "nav_msgs/msg/odometry.hpp"
@@ -84,9 +83,6 @@ public:
     waypoint_pub_   = create_publisher<visualization_msgs::msg::MarkerArray>("my_waypoints", 10);
     l1_dist_pub_    = create_publisher<geometry_msgs::msg::Point>("l1_distance", 10);
     gap_data_pub_   = create_publisher<f110_msgs::msg::PidData>("/trailing/gap_data", 10);
-    
-    // 하이브리드 컨트롤러를 위한 토픽 발행/구독
-    nearest_wp_idx_pub_ = create_publisher<std_msgs::msg::Int32>("/control/nearest_waypoint_idx", 10);
 
     // 모드에 따라 컨트롤러 초기화
     if (mode_ == "MAP") {
@@ -134,21 +130,6 @@ public:
     frenet_odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
         "/car_state/frenet/odom", 10,
         std::bind(&Controller::car_state_frenet_cb, this, std::placeholders::_1));
-
-    // 하이브리드 컨트롤러를 위한 토픽 구독
-    stanley_angle_sub_ = create_subscription<std_msgs::msg::Float64>(
-        "/control/stanley_angle", 10,
-        [this](std_msgs::msg::Float64::SharedPtr msg){ 
-          stanley_angle_ = msg->data; 
-          stanley_angle_received_ = true;
-        });
-
-    curvature_weight_sub_ = create_subscription<std_msgs::msg::Float64>(
-        "/control/curvature_weight", 10,
-        [this](std_msgs::msg::Float64::SharedPtr msg){ 
-          curvature_weight_ = msg->data; 
-          curvature_weight_received_ = true;
-        });
 
     // 연산량 절감: LiDAR는 기본 비활성(원본 주석과 동일)
     // scan_sub_ = create_subscription<sensor_msgs::msg::LaserScan>(
@@ -671,24 +652,7 @@ private:
       track_length_.value_or(0.0)
     );
     double speed = std::get<0>(out);
-    double pp_steer = std::get<3>(out);  // 순수추종 스티어
-    int idx_nearest_wp = std::get<6>(out);  // 최근접 웨이포인트 인덱스
-
-    // 최근접 웨이포인트 인덱스 발행 (다른 노드들이 사용)
-    std_msgs::msg::Int32 idx_msg;
-    idx_msg.data = idx_nearest_wp;
-    nearest_wp_idx_pub_->publish(idx_msg);
-
-    // 하이브리드 스티어 계산 (토픽에서 받은 스탠리 각도와 가중치 사용)
-    double steer = 0.0;
-    if (stanley_angle_received_ && curvature_weight_received_) {
-      // 외부에서 받은 스탠리 각도와 가중치로 하이브리드 계산
-      steer = pp_controller_->calc_hybrid_steering_external(
-          pp_steer, stanley_angle_, curvature_weight_);
-    } else {
-      // 토픽 데이터가 아직 없으면 순수추종만 사용
-      steer = pp_steer;
-    }
+    double steer = std::get<3>(out);
 
     waypoint_safety_counter_++;
     if (waypoint_safety_counter_ >= static_cast<int>(rate_hz_ / state_machine_rate_ * 10.0)) {
@@ -736,12 +700,6 @@ private:
   std::vector<double> acc_now_;
   bool prioritize_dyn_{false};
 
-  // 하이브리드 컨트롤러를 위한 토픽 데이터
-  double stanley_angle_{0.0};
-  double curvature_weight_{0.0};
-  bool stanley_angle_received_{false};
-  bool curvature_weight_received_{false};
-
   // FTG 원격 파라미터
   bool   state_machine_debug_{false};
   double state_machine_safety_radius_{0.0};
@@ -762,7 +720,6 @@ private:
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr waypoint_pub_;
   rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr l1_dist_pub_;
   rclcpp::Publisher<f110_msgs::msg::PidData>::SharedPtr gap_data_pub_;
-  rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr nearest_wp_idx_pub_;
 
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr state_sub_;
   rclcpp::Subscription<f110_msgs::msg::WpntArray>::SharedPtr glb_wpnts_sub_;
@@ -771,8 +728,6 @@ private:
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr frenet_odom_sub_;
-  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr stanley_angle_sub_;
-  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr curvature_weight_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
   rclcpp::Subscription<rcl_interfaces::msg::ParameterEvent>::SharedPtr param_event_sub_;

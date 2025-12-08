@@ -1,5 +1,4 @@
 cmake_minimum_required(VERSION 3.8)
-
 project(controller_cpp)
 
 # C++17
@@ -27,7 +26,6 @@ include_directories(
   include
 )
 
-# 컨트롤러 매니저 노드
 add_executable(controller_manager_cpp
   src/controller_manager_cpp.cpp
   src/pp.cpp
@@ -46,37 +44,7 @@ ament_target_dependencies(controller_manager_cpp
 
 target_link_libraries(controller_manager_cpp yaml-cpp)
 
-# 스탠리 노드 (하이브리드 컨트롤러용)
-add_executable(stanley_node
-  src/stanley_node.cpp
-)
-
-target_include_directories(stanley_node PRIVATE include)
-
-ament_target_dependencies(stanley_node
-  rclcpp
-  geometry_msgs
-  nav_msgs
-  std_msgs
-  f110_msgs
-  tf2
-)
-
-# 곡률 노드 (하이브리드 컨트롤러용)
-add_executable(curvature_node
-  src/curvature_node.cpp
-)
-
-target_include_directories(curvature_node PRIVATE include)
-
-ament_target_dependencies(curvature_node
-  rclcpp
-  std_msgs
-  f110_msgs
-)
-
-# 설치
-install(TARGETS controller_manager_cpp stanley_node curvature_node
+install(TARGETS controller_manager_cpp
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch

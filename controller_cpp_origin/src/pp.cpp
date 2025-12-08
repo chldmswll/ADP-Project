@@ -269,44 +269,13 @@ double PP_Controller::calc_hybrid_steering(const Vec2& L1_point,
   constexpr double curvature_norm_scale = 0.65; // pp.cpp의 기존 값 유지
   const double w_curv = clip(curvature_now / curvature_norm_scale, 0.0, 1.0);
   const double w_delta = clip(std::abs(curvature_future) / curvature_norm_scale, 0.0, 1.0);
-  double stanley_weight_raw = clip(0.5 * w_curv + 0.5 * w_delta, 0.0, 1.0);
+  double stanley_weight = clip(0.5 * w_curv + 0.5 * w_delta, 0.0, 1.0);
 
-  // 가중치 자체에 smoothing 추가 (가중치 변화를 부드럽게) - 극단적으로 느리게
-  static double stanley_weight_prev = 0.0;
-  constexpr double weight_alpha = 0.9;  // 0.7 -> 0.9로 증가 (가중치 변화를 매우 느리게)
-  double stanley_weight = weight_alpha * stanley_weight_prev + (1.0 - weight_alpha) * stanley_weight_raw;
-  stanley_weight_prev = stanley_weight;
+  // 최소한의 순수추종 영향 확보
+  stanley_weight = clip(stanley_weight, 0.0, 0.85);
+  const double hybrid_steer = stanley_weight * stanley + (1.0 - stanley_weight) * pp;
 
-  // 스탠리 가중치 최대값을 매우 낮춰서 순수추종 비중 대폭 확보 (극단적으로 안정적으로)
-  stanley_weight = clip(stanley_weight, 0.0, 0.35);  // 0.6 -> 0.35로 대폭 감소
-  
-  // linear interpolation
-  double hybrid_steer = stanley_weight * stanley + (1.0 - stanley_weight) * pp;
-
-  // ---------- Low-pass filter 추가 (극단적으로 강한 smoothing) ----------
-  static double steer_prev = 0.0;
-  const double alpha = 0.97;  // 0.92 -> 0.97로 증가 (극단적으로 느리고 부드럽게)
-
-  double steer_filtered = alpha * steer_prev + (1.0 - alpha) * hybrid_steer;
-  steer_prev = steer_filtered;
-
-  return steer_filtered;
-}
-
-/** 외부에서 스탠리 각도와 가중치를 받아서 하이브리드 스티어 계산 (노드 분리용) */
-double PP_Controller::calc_hybrid_steering_external(double pp_steer, double stanley_angle, double stanley_weight)
-{
-  // linear interpolation
-  double hybrid_steer = stanley_weight * stanley_angle + (1.0 - stanley_weight) * pp_steer;
-
-  // ---------- Low-pass filter 추가 (극단적으로 강한 smoothing) ----------
-  static double steer_prev = 0.0;
-  const double alpha = 0.97;  // 0.92 -> 0.97로 증가 (극단적으로 느리고 부드럽게)
-
-  double steer_filtered = alpha * steer_prev + (1.0 - alpha) * hybrid_steer;
-  steer_prev = steer_filtered;
-
-  return steer_filtered;
+  return hybrid_steer;
 }
 
 /** 순수추종 스티어링 각도 계산 (기존 calc_steering_angle 로직) */
@@ -377,23 +346,12 @@ double PP_Controller::calc_stanley_angle(double lat_e_norm, double yaw)
   const double dpsi = std::atan2(std::sin(heading - map_heading), std::cos(heading - map_heading));
   const double lat_error = (*frenet_)[1];  // signed lateral error
 
-  constexpr double stanley_softening = 1.2;   // 0.5 -> 1.2로 증가 (스탠리 반응을 매우 부드럽게)
+  constexpr double stanley_softening = 0.5;   // 속도 0 근처 안정화를 위한 softening
   const double vel = std::max(speed_now_, 0.1);
   const double correction = std::atan2(lat_error, stanley_softening + vel);
 
   // 헤딩 오차(dpsi)와 측방 오차(lat_error)를 동시에 고려
-  double stanley_angle = dpsi + correction;
-  
-  // 스탠리 각도에 rate limiting 추가 (극단적으로 강한 제한)
-  static double stanley_prev = 0.0;
-  constexpr double stanley_rate_limit = 0.06;  // 0.15 -> 0.06으로 대폭 감소 (매우 느린 변화만 허용)
-  const double stanley_diff = stanley_angle - stanley_prev;
-  if (std::abs(stanley_diff) > stanley_rate_limit) {
-    stanley_angle = stanley_prev + (stanley_diff > 0 ? stanley_rate_limit : -stanley_rate_limit);
-  }
-  stanley_prev = stanley_angle;
-  
-  return stanley_angle;
+  return dpsi + correction;
 }
 
 /** 미래 곡률 변화량 추정: 간단히 일정 거리 앞의 곡률 평균 차이를 이용 */

@@ -8,7 +8,10 @@
 #include <algorithm>
 #include <optional>
 
-class PP_Controller {
+// 조향 LUT (C++ 버전 가정)
+#include "lookup_steer_angle.hpp"
+
+class MAP_Controller {
 public:
   using Vec2  = std::array<double,2>;
   using Pose3 = std::array<double,3>;   // x, y, yaw
@@ -19,35 +22,34 @@ public:
 
   using Logger = std::function<void(const std::string&)>;
 
-  PP_Controller(double t_clip_min,
-                double t_clip_max,
-                double m_l1,
-                double q_l1,
-                double speed_lookahead,
-                double lat_err_coeff,
-                double acc_scaler_for_steer,
-                double dec_scaler_for_steer,
-                double start_scale_speed,
-                double end_scale_speed,
-                double downscale_factor,
-                double speed_lookahead_for_steer,
+  MAP_Controller(double t_clip_min,
+                 double t_clip_max,
+                 double m_l1,
+                 double q_l1,
+                 double speed_lookahead,
+                 double lat_err_coeff,
+                 double acc_scaler_for_steer,
+                 double dec_scaler_for_steer,
+                 double start_scale_speed,
+                 double end_scale_speed,
+                 double downscale_factor,
+                 double speed_lookahead_for_steer,
 
-                bool   prioritize_dyn,
-                double trailing_gap,
-                double trailing_p_gain,
-                double trailing_i_gain,
-                double trailing_d_gain,
-                double blind_trailing_speed,
-                double trailing_to_gbtrack_speed_scale,
+                 bool   prioritize_dyn,
+                 double trailing_gap,
+                 double trailing_p_gain,
+                 double trailing_i_gain,
+                 double trailing_d_gain,
+                 double blind_trailing_speed,
+                 double trailing_to_gbtrack_speed_scale,
 
-                double loop_rate,
-                double wheelbase,
+                 double loop_rate,
+                 const std::string& LUT_name,
 
-                Logger logger_info  = [](auto const&){},
-                Logger logger_warn  = [](auto const&){});
+                 Logger logger_info = [](auto const&){},
+                 Logger logger_warn = [](auto const&){});
 
-  // Python과 동일한 반환 순서:
-  // (speed, acceleration, jerk, steering_angle, L1_point, L1_distance, idx_nearest_waypoint)
+  // Python과 동일 반환: (speed, acceleration, jerk, steering, L1_point, L1_distance, idx_nearest)
   using Output = std::tuple<double,double,double,double,Vec2,double,int>;
 
   Output main_loop(const std::string& state,
@@ -59,21 +61,17 @@ public:
                    const std::vector<double>& acc_now,
                    double track_length);
 
-  // 외부에서 스탠리 각도와 가중치를 받아서 하이브리드 스티어 계산 (노드 분리용)
-  double calc_hybrid_steering_external(double pp_steer, double stanley_angle, double stanley_weight);
-
-  // 동적 파라미터 갱신을 위해 public 멤버 그대로 노출 (Python과 동일)
+  // 동적 파라미터: 외부에서 갱신할 수 있게 public
   double t_clip_min, t_clip_max, m_l1, q_l1, speed_lookahead, lat_err_coeff;
   double acc_scaler_for_steer, dec_scaler_for_steer;
   double start_scale_speed, end_scale_speed, downscale_factor, speed_lookahead_for_steer;
   bool   prioritize_dyn;
   double trailing_gap, trailing_p_gain, trailing_i_gain, trailing_d_gain, blind_trailing_speed, trailing_to_gbtrack_speed_scale;
-  double loop_rate, wheelbase;
+  double loop_rate;
 
-  // 상태 플래그 (원본 코드와 호환)
+  // 상태 플래그 (원본과 동일 이름 유지)
   bool flag1{false};
 
-  // 내부 로깅 함수 교체 가능
   Logger logger_info, logger_warn;
 
 private:
@@ -87,14 +85,11 @@ private:
   std::vector<double> acc_now_;
   double track_length_{0.0};
 
-  // controller 내부 파라미터
-  std::vector<double> lateral_error_list_; // (미사용: 추후 분석 시 유지)
+  // 컨트롤러 내부 변수
+  std::vector<double> lateral_error_list_;
   double curr_steering_angle_{0.0};
   int idx_nearest_wp_{-1};
   double curvature_waypoints_{0.0};
-  double max_curvature_{0.0};
-
-  std::array<double,10> d_vs_{{0}};
   double acceleration_command_{0.0};
 
   // trailing 상태
@@ -104,13 +99,17 @@ private:
   double speed_command_{0.0};
   double trailing_speed_{0.0};
 
-  // 내부 유틸
+  // LUT
+  std::string LUT_name_;
+  LookupSteerAngle steer_lookup_;
+
+  // 유틸
   static inline double clip(double v, double lo, double hi) {
     return std::max(lo, std::min(v, hi));
   }
   static inline double norm2(double x, double y) { return std::sqrt(x*x + y*y); }
 
-  int nearest_waypoint(const Vec2& position, const std::vector<WpRow>& waypoints) const;
+  int  nearest_waypoint(const Vec2& position, const std::vector<WpRow>& waypoints) const;
   Vec2 waypoint_at_distance_before_car(double distance,
                                        const std::vector<WpRow>& waypoints,
                                        int idx_waypoint_behind_car) const;
@@ -125,16 +124,6 @@ private:
   double trailing_controller(double global_speed);
 
   std::pair<Vec2,double> calc_L1_point(double lateral_error);
-  
-  // 하이브리드 스티어링 관련 함수들
-  // 순수추종과 스탠리를 곡률 기반 가중치로 결합하고, low-pass filter로 오실레이션 감소
-  double calc_hybrid_steering(const Vec2& L1_point, double L1_distance,
-                              double yaw, double lat_e_norm, const Vec2& v);
-  double calc_pp_steering_angle(const Vec2& L1_point, double L1_distance,
-                               double yaw, double lat_e_norm, const Vec2& v);
-  double calc_stanley_angle(double lat_e_norm, double yaw);
-  double estimate_future_curvature_change();
-  
   double calc_steering_angle(const Vec2& L1_point, double L1_distance,
                              double yaw, double lat_e_norm,
                              const Vec2& v);

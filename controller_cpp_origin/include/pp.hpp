@@ -59,9 +59,6 @@ public:
                    const std::vector<double>& acc_now,
                    double track_length);
 
-  // 외부에서 스탠리 각도와 가중치를 받아서 하이브리드 스티어 계산 (노드 분리용)
-  double calc_hybrid_steering_external(double pp_steer, double stanley_angle, double stanley_weight);
-
   // 동적 파라미터 갱신을 위해 public 멤버 그대로 노출 (Python과 동일)
   double t_clip_min, t_clip_max, m_l1, q_l1, speed_lookahead, lat_err_coeff;
   double acc_scaler_for_steer, dec_scaler_for_steer;
@@ -127,7 +124,6 @@ private:
   std::pair<Vec2,double> calc_L1_point(double lateral_error);
   
   // 하이브리드 스티어링 관련 함수들
-  // 순수추종과 스탠리를 곡률 기반 가중치로 결합하고, low-pass filter로 오실레이션 감소
   double calc_hybrid_steering(const Vec2& L1_point, double L1_distance,
                               double yaw, double lat_e_norm, const Vec2& v);
   double calc_pp_steering_angle(const Vec2& L1_point, double L1_distance,
