@@ -1,0 +1,5 @@
+<launch>
+    <node pkg="teb_planner" exec="teb_planner" name="spline_planner" output="screen">
+    </node>
+</launch>
+
