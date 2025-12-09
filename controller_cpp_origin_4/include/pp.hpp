@@ -116,7 +116,7 @@ private:
                                        int idx_waypoint_behind_car) const;
 
   std::pair<double,double> calc_lateral_error_norm() const; // (lat_e_norm, lateral_error)
-  double speed_adjust_lat_err(double global_speed, double lat_e_norm, double curvature_now) const;
+  double speed_adjust_lat_err(double global_speed, double lat_e_norm) const;
   double speed_adjust_heading(double speed_command) const;
 
   double acc_scaling(double steer) const;
@@ -129,8 +129,7 @@ private:
   // 하이브리드 스티어링 관련 함수들
   // 순수추종과 스탠리를 곡률 기반 가중치로 결합하고, low-pass filter로 오실레이션 감소
   double calc_hybrid_steering(const Vec2& L1_point, double L1_distance,
-                              double yaw, double lat_e_norm, const Vec2& v,
-                              double stanley_angle, double curvature_now, double curvature_future);
+                              double yaw, double lat_e_norm, const Vec2& v);
   double calc_pp_steering_angle(const Vec2& L1_point, double L1_distance,
                                double yaw, double lat_e_norm, const Vec2& v);
   double calc_stanley_angle(double lat_e_norm, double yaw);
