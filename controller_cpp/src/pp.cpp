@@ -1,4 +1,6 @@
 #include "pp.hpp"
+#include "stanley.hpp"
+#include "curvature.hpp"
 #include <limits>
 
 /**
@@ -178,10 +180,6 @@ double PP_Controller::speed_adjust_heading(double speed_command) const {
     scale = min_scale;
   }
 
-  // 로깅 (deg 표기)
-  const double deg = heading_error * 180.0 / M_PI;
-  // logger_info(("[PP] heading error=" + std::to_string(deg) + " deg, speed scale=" + std::to_string(scale)).c_str());
-
   return speed_command * scale;
 }
 
@@ -323,14 +321,14 @@ double PP_Controller::calc_hybrid_steering_external(double pp_steer, double stan
   steer_prev = steer_filtered;
 
   return steer_filtered;
-}
+} 
 
-/** 순수추종 스티어링 각도 계산 (기존 calc_steering_angle 로직) */
+/** 순수추종 스티어링 각도 계산 (기존 로직 유지) */
 double PP_Controller::calc_pp_steering_angle(const Vec2& L1_point,
                                              double L1_distance,
                                              double yaw,
                                              double lat_e_norm,
-                                             const Vec2& v)
+                                             const Vec2& v)  
 {
   // speed lookahead for steering
   double speed_la_for_lu = 0.0;
@@ -375,66 +373,18 @@ double PP_Controller::calc_pp_steering_angle(const Vec2& L1_point,
   return steer;
 }
 
-/** 스탠리 각도 계산 */
+/** 스탠리 각도 계산 (stanley 함수 사용) */
 double PP_Controller::calc_stanley_angle(double lat_e_norm, double yaw)
 {
-  if (idx_nearest_wp_ < 0 || idx_nearest_wp_ >= static_cast<int>(wp_.size())) {
-    logger_warn(std::string("[PP] idx_nearest_wp_ not set before Stanley calc"));
-    return 0.0;
-  }
-
-  if (!frenet_) {
-    logger_warn(std::string("[PP] frenet_ not available for Stanley calc"));
-    return 0.0;
-  }
-
-  const double heading = yaw;
-  const double map_heading = wp_[idx_nearest_wp_][6]; // WpRow[6] = psi (heading)
-
-  const double dpsi = std::atan2(std::sin(heading - map_heading), std::cos(heading - map_heading));
-  const double lat_error = (*frenet_)[1];  // signed lateral error
-
-  constexpr double stanley_softening = 1.2;   // 0.5 -> 1.2로 증가 (스탠리 반응을 매우 부드럽게)
-  const double vel = std::max(speed_now_, 0.1);
-  const double correction = std::atan2(lat_error, stanley_softening + vel);
-
-  // 헤딩 오차(dpsi)와 측방 오차(lat_error)를 동시에 고려
-  double stanley_angle = dpsi + correction;
-  
-  // 스탠리 각도에 rate limiting 추가 (극단적으로 강한 제한)
-  static double stanley_prev = 0.0;
-  constexpr double stanley_rate_limit = 0.06;  // 0.15 -> 0.06으로 대폭 감소 (매우 느린 변화만 허용)
-  const double stanley_diff = stanley_angle - stanley_prev;
-  if (std::abs(stanley_diff) > stanley_rate_limit) {
-    stanley_angle = stanley_prev + (stanley_diff > 0 ? stanley_rate_limit : -stanley_rate_limit);
-  }
-  stanley_prev = stanley_angle;
-  
-  return stanley_angle;
+  return Stanley::calc_angle(
+    yaw, lat_e_norm, idx_nearest_wp_, wp_, frenet_, speed_now_, logger_warn
+  );
 }
 
-/** 미래 곡률 변화량 추정: 간단히 일정 거리 앞의 곡률 평균 차이를 이용 */
+/** 미래 곡률 변화량 추정 (curvature 함수 사용) */
 double PP_Controller::estimate_future_curvature_change()
 {
-  if (wp_.size() < 3 || idx_nearest_wp_ < 0) {
-    return 0.0;
-  }
-
-  // 앞쪽 horizon 구간의 곡률 변화 추정 (calc_L1_point와 동일한 개념)
-  constexpr double curvature_delta_horizon_m = 5.0;  // [m] 미래 구간 길이 (3.0 ~ 5.0 사이 조절 가능)
-  constexpr double waypoint_res_m = 0.1;             // 웨이포인트 간격 0.1m 가정
-  const int horizon_idx = static_cast<int>(curvature_delta_horizon_m / waypoint_res_m);
-
-  const int start_idx = idx_nearest_wp_;
-  const int mid_idx = std::min(start_idx + horizon_idx / 2, static_cast<int>(wp_.size()) - 1);
-  const int end_idx = std::min(start_idx + horizon_idx, static_cast<int>(wp_.size()) - 1);
-
-  const double curv_now = wp_[start_idx][5]; // WpRow[5] = kappa
-  const double curv_mid = wp_[mid_idx][5];
-  const double curv_end = wp_[end_idx][5];
-
-  // 현재-중간-미래 곡률의 변화 추세를 단순 미분으로 근사
-  return (curv_end - curv_mid) + (curv_mid - curv_now);
+  return Curvature::estimate_future_curvature_change(idx_nearest_wp_, wp_);
 }
 
 // 기존 calc_steering_angle은 하이브리드 버전으로 대체
