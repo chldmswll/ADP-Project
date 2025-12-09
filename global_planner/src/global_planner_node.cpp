@@ -121,9 +121,15 @@ public:
       std::chrono::milliseconds(static_cast<int>(1000.0 / rate)),
       std::bind(&GlobalPlanner::global_plan_callback, this));
 
+    // Republish timer for mapping mode
+    republish_timer_ = this->create_wall_timer(
+      std::chrono::milliseconds(500),  // 2 Hz
+      std::bind(&GlobalPlanner::republish_callback, this));
+
     map_name_ = map_name;
     map_editor_ = map_editor;
     create_map_ = create_map;
+    waypoints_published_ = false;
   }
 
 private:
@@ -144,13 +150,31 @@ private:
       if (success) {
         RCLCPP_WARN(this->get_logger(), "Global planner succeeded: map_name=%s", map_name.c_str());
         read_and_publish(map_editor_, create_map_);
-        RCLCPP_INFO(this->get_logger(), "Killing global planner...");
-        rclcpp::shutdown();
+        waypoints_published_ = true;
+        
+        // If in mapping mode (map_editor=true, create_map=false), keep republishing waypoints
+        // Otherwise, shutdown after publishing once
+        if (map_editor_ && !create_map_) {
+          RCLCPP_INFO(this->get_logger(), "In mapping mode. Continuing to republish waypoints...");
+          // Stop the planning timer, keep republish timer running
+          timer_->cancel();
+        } else {
+          RCLCPP_INFO(this->get_logger(), "Killing global planner...");
+          rclcpp::shutdown();
+        }
       }
     } catch (const std::exception & e) {
       RCLCPP_ERROR(this->get_logger(), "%s", e.what());
       RCLCPP_WARN(this->get_logger(), "Killing global planner...");
       rclcpp::shutdown();
+    }
+  }
+
+  void republish_callback()
+  {
+    // In mapping mode, republish waypoints periodically
+    if (map_editor_ && !create_map_ && waypoints_published_) {
+      read_and_publish(map_editor_, create_map_);
     }
   }
 
@@ -214,9 +238,11 @@ private:
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr map_infos_pub_;
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr est_lap_time_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
+  rclcpp::TimerBase::SharedPtr republish_timer_;
   std::string map_name_;
   bool map_editor_;
   bool create_map_;
+  bool waypoints_published_;
 };
 
 int main(int argc, char ** argv)

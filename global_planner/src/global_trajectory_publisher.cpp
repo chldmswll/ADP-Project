@@ -27,26 +27,27 @@ public:
       "/map_infos", 10,
       std::bind(&GlobalRepublisher::map_info_cb, this, std::placeholders::_1));
 
-    // Publishers
-    glb_wpnts_pub_ = this->create_publisher<f110_msgs::msg::WpntArray>("global_waypoints", 10);
+    // Publishers (use absolute paths to match subscribers)
+    glb_wpnts_pub_ = this->create_publisher<f110_msgs::msg::WpntArray>("/global_waypoints", 10);
     glb_markers_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(
-      "global_waypoints/markers", 10);
+      "/global_waypoints/markers", 10);
     vis_track_bnds_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(
-      "trackbounds/markers", 10);
+      "/trackbounds/markers", 10);
     glb_sp_wpnts_pub_ = this->create_publisher<f110_msgs::msg::WpntArray>(
-      "global_waypoints/shortest_path", 10);
+      "/global_waypoints/shortest_path", 10);
     glb_sp_markers_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(
-      "global_waypoints/shortest_path/markers", 10);
+      "/global_waypoints/shortest_path/markers", 10);
     centerline_wpnts_pub_ = this->create_publisher<f110_msgs::msg::WpntArray>(
       "/centerline_waypoints", 10);
     centerline_markers_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(
       "/centerline_waypoints/markers", 10);
-    map_info_pub_ = this->create_publisher<std_msgs::msg::String>("map_infos", 10);
+    map_info_pub_ = this->create_publisher<std_msgs::msg::String>("/map_infos", 10);
 
     // Read info from JSON file if provided
     std::string map_path = this->get_parameter("map_path").as_string();
+    RCLCPP_INFO(this->get_logger(), "global_trajectory_publisher started. map_path='%s'", map_path.c_str());
     if (!map_path.empty()) {
-      RCLCPP_INFO(this->get_logger(), "Reading parameters from %s", map_path.c_str());
+      RCLCPP_INFO(this->get_logger(), "Reading waypoints from %s", map_path.c_str());
       try {
         auto [map_infos, est_lap_time, centerline_markers, centerline_wpnts,
               glb_markers, glb_wpnts, glb_sp_markers, glb_sp_wpnts, track_bounds] =
@@ -62,14 +63,35 @@ public:
         glb_sp_wpnts_ = std::make_shared<f110_msgs::msg::WpntArray>(glb_sp_wpnts);
         track_bounds_ = std::make_shared<visualization_msgs::msg::MarkerArray>(track_bounds);
 
-        // Publish markers once
+        RCLCPP_INFO(this->get_logger(), 
+                    "Successfully loaded waypoints: global=%zu, centerline=%zu, shortest_path=%zu",
+                    glb_wpnts.wpnts.size(), centerline_wpnts.wpnts.size(), glb_sp_wpnts.wpnts.size());
+
+        // Publish markers once immediately
         pub_marker_once();
+        
+        // Also publish waypoints immediately (not just wait for timer)
+        if (!glb_wpnts.wpnts.empty()) {
+          glb_wpnts_pub_->publish(glb_wpnts);
+          RCLCPP_INFO(this->get_logger(), "Published %zu global waypoints immediately", glb_wpnts.wpnts.size());
+        } else {
+          RCLCPP_WARN(this->get_logger(), "Global waypoints are empty, not publishing");
+        }
+        if (!centerline_wpnts.wpnts.empty()) {
+          centerline_wpnts_pub_->publish(centerline_wpnts);
+        }
+        if (!glb_sp_wpnts.wpnts.empty()) {
+          glb_sp_wpnts_pub_->publish(glb_sp_wpnts);
+        }
       } catch (const std::exception & e) {
-        RCLCPP_WARN(this->get_logger(), "%s param not found. Not publishing", map_path.c_str());
+        RCLCPP_WARN(this->get_logger(), "Failed to read waypoints from %s: %s. Will try to subscribe from topics instead.", 
+                    map_path.c_str(), e.what());
       }
     } else {
-      RCLCPP_INFO(this->get_logger(), "global_trajectory_publisher did not find any map_path param");
+      RCLCPP_WARN(this->get_logger(), "global_trajectory_publisher did not find any map_path param. Will subscribe from topics instead.");
     }
+    
+    RCLCPP_INFO(this->get_logger(), "global_trajectory_publisher initialization complete. Timer started at 2Hz.");
 
     // Publish at 2 Hz
     timer_ = this->create_wall_timer(
@@ -83,8 +105,13 @@ private:
     glb_wpnts_ = msg;
     if (!msg->wpnts.empty()) {
       double track_length = msg->wpnts.back().s_m;
-      this->declare_parameter("track_length", track_length);
-      this->set_parameter(rclcpp::Parameter("track_length", track_length));
+      // Only declare if not already declared, otherwise just set
+      if (!this->has_parameter("track_length")) {
+        this->declare_parameter("track_length", track_length);
+      } else {
+        this->set_parameter(rclcpp::Parameter("track_length", track_length));
+      }
+      RCLCPP_DEBUG(this->get_logger(), "Received %zu waypoints from /global_waypoints topic", msg->wpnts.size());
     }
   }
 
@@ -105,17 +132,22 @@ private:
 
   void global_republisher()
   {
-    if (glb_wpnts_) {
+    // Republish waypoints from file or topic if available
+    if (glb_wpnts_ && !glb_wpnts_->wpnts.empty()) {
       glb_wpnts_pub_->publish(*glb_wpnts_);
+      RCLCPP_DEBUG(this->get_logger(), "Republished %zu global waypoints", glb_wpnts_->wpnts.size());
     }
 
-    if (glb_sp_wpnts_) {
+    if (glb_sp_wpnts_ && !glb_sp_wpnts_->wpnts.empty()) {
       glb_sp_wpnts_pub_->publish(*glb_sp_wpnts_);
     }
 
-    if (centerline_wpnts_) {
+    if (centerline_wpnts_ && !centerline_wpnts_->wpnts.empty()) {
       centerline_wpnts_pub_->publish(*centerline_wpnts_);
     }
+
+    // Also republish markers periodically
+    pub_marker_once();
   }
 
   void pub_marker_once()
@@ -134,6 +166,10 @@ private:
 
     if (track_bounds_) {
       vis_track_bnds_pub_->publish(*track_bounds_);
+    }
+
+    if (map_infos_) {
+      map_info_pub_->publish(*map_infos_);
     }
   }
 
